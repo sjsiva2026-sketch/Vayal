@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Vayal",
+    "slug": "vayal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#1C7C54",
+    "splash": {
+      "backgroundColor": "#1C7C54",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.vayal.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1C7C54"
+      },
+      "package": "com.vayal.app",
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "scheme": "vayal",
+    "plugins": []
+  }
+}

@@ -1,0 +1,97 @@
+════════════════════════════════════════════════════
+  VAYAL — DO THESE 4 THINGS IN FIREBASE CONSOLE
+  Project: vayal-33b12
+════════════════════════════════════════════════════
+
+OPEN: https://console.firebase.google.com/project/vayal-33b12
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 1 — Enable Phone Authentication
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 1. Left menu → Authentication → Get started
+ 2. Sign-in method tab → Phone → Click Enable
+ 3. Save
+
+ Then add TEST phone numbers (scroll down on same page):
+ ┌─────────────────────┬──────────────────┐
+ │ Phone Number        │ Verification Code│
+ ├─────────────────────┼──────────────────┤
+ │ +91 9999999999      │ 123456           │
+ │ +91 8888888888      │ 123456           │
+ └─────────────────────┴──────────────────┘
+ → Click Save
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 2 — Create Firestore Database
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 1. Left menu → Firestore Database → Create database
+ 2. Choose: Start in TEST MODE  ← IMPORTANT
+ 3. Region: asia-south1 (Mumbai)
+ 4. Click Enable
+ 5. Wait 30 seconds
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 3 — Set Firestore Rules to Allow All (Dev)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 1. Firestore Database → Rules tab
+ 2. Replace ALL existing rules with this:
+
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /{document=**} {
+         allow read, write: if true;
+       }
+     }
+   }
+
+ 3. Click Publish
+ (This allows all reads/writes during development)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 4 — Test the App
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ In your terminal:
+   npx expo start
+
+ On your phone (Expo Go app):
+   1. Select Farmer 👨‍🌾
+   2. Enter phone: 9999999999
+   3. Tap Send OTP
+   4. Enter OTP: 123456
+   5. Fill name, taluk, district → Save
+   6. You're on the Farmer Home screen! ✅
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ERROR GUIDE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ "auth/operation-not-allowed"
+   → Phone auth not enabled → Do Step 1
+
+ "permission-denied"
+   → Firestore rules blocking → Do Step 3
+
+ "auth/invalid-phone-number"
+   → Phone number format wrong
+   → App adds +91 automatically, enter 10 digits only
+
+ "No OTP session"
+   → Tap Send OTP first, then enter code
+
+ OTP screen says wrong code
+   → Make sure test number +91 9999999999
+     is added in Firebase Console → code 123456
+
+ Splash screen stays forever
+   → Fixed! App now goes to RoleSelect after 2 seconds
+
+ App goes to RoleSelect but nothing happens on tap
+   → Check internet connection
+   → Check Firebase config in firebase/config.js
+
+════════════════════════════════════════════════════

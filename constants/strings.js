@@ -1,0 +1,18 @@
+export const STRINGS = {
+  APP_NAME: 'Vayal',
+  TAGLINE: 'Farmer–Machine Connect',
+  LOGIN_TITLE: 'Welcome to Vayal 🌾',
+  LOGIN_SUBTITLE: 'Enter your phone number to continue',
+  OTP_TITLE: 'Verify OTP',
+  OTP_SUBTITLE: 'Enter the 6-digit code sent to your number',
+  SELECT_ROLE: 'Who are you?',
+  FARMER: 'Farmer 👨‍🌾',
+  OWNER: 'Machine Owner 🚜',
+  BOOK_NOW: 'Book Now',
+  ACCEPT: 'Accept ✅',
+  REJECT: 'Reject ❌',
+  PAY_NOW: 'Pay Commission Now',
+  WORK_START: 'Start Work',
+  WORK_DONE: 'Mark Complete',
+  COMMISSION_RATE: 30,
+};

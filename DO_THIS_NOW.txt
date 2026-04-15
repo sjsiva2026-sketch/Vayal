@@ -1,0 +1,23 @@
+VAYAL — DO THESE 2 THINGS RIGHT NOW
+=====================================
+
+1. ENABLE ANONYMOUS AUTH:
+   https://console.firebase.google.com/project/vayal-33b12/authentication/providers
+   → Click "Anonymous"
+   → Toggle ON
+   → Save
+
+2. FIRESTORE TEST MODE (already done ✅):
+   Rules expire: April 19, 2026
+
+THEN RUN:
+   npx expo start --offline
+
+LOGIN FLOW:
+   1. Select Farmer or Owner
+   2. Enter any 10-digit phone
+   3. Tap "Get OTP"
+   4. BIG GREEN BOX shows the OTP code
+   5. Enter that code
+   6. Fill profile → Save
+   7. ✅ Home screen opens!

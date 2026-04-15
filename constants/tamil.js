@@ -1,0 +1,35 @@
+// Tamil language strings for future Tamil UI support
+// Usage: import { TAMIL } from '../constants/tamil';
+
+export const TAMIL = {
+  APP_NAME:      'வாயல்',
+  TAGLINE:       'விவசாயி–இயந்திர இணைப்பு',
+  SELECT_ROLE:   'நீங்கள் யார்?',
+  FARMER:        'விவசாயி',
+  OWNER:         'இயந்திர உரிமையாளர்',
+  BOOK_NOW:      'இப்போது பதிவு செய்யுங்கள்',
+  MY_BOOKINGS:   'என் பதிவுகள்',
+  FIND_MACHINE:  'இயந்திரம் தேடுங்கள்',
+  SET_LOCATION:  'இடத்தை அமைக்கவும்',
+  MY_PROFILE:    'என் சுயவிவரம்',
+  PENDING:       'நிலுவையில் உள்ளது',
+  ACCEPTED:      'ஏற்கப்பட்டது',
+  REJECTED:      'நிராகரிக்கப்பட்டது',
+  ONGOING:       'நடந்து கொண்டிருக்கிறது',
+  COMPLETED:     'முடிந்தது',
+  OTP_HINT:      'வேலை தொடங்க OTP கொடுங்கள்',
+  COMMISSION:    'கமிஷன்',
+  PAY_NOW:       'இப்போது செலுத்துங்கள்',
+  HECTARE:       'ஹெக்டேர்',
+  LOGOUT:        'வெளியேறு',
+  CALL:          'அழைக்கவும்',
+  WHATSAPP:      'வாட்ஸ்அப்',
+  SAVE:          'சேமிக்கவும்',
+  CANCEL:        'ரத்து செய்யவும்',
+  CATEGORIES: {
+    ROTATOR:      'ரோட்டேட்டர்',
+    CULTIVATOR:   'கல்டிவேட்டர்',
+    HARVESTER:    'ஹார்வெஸ்டர்',
+    STRAW_CHOPPER:'ஸ்ட்ரா சாப்பர்',
+  },
+};

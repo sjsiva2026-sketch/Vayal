@@ -1,0 +1,22 @@
+VAYAL — COPY THESE 5 IMAGE FILES NOW
+=====================================
+
+Download these 5 files from the Claude chat and copy them to:
+  C:\Users\Guna S\Desktop\vayal\assets\icons\
+
+FILES TO COPY:
+  farmer_role.png   → assets\icons\farmer_role.png
+  owner_role.jpeg   → assets\icons\owner_role.jpeg
+  gpay.png          → assets\icons\gpay.png
+  phonepe.jpg       → assets\icons\phonepe.jpg
+  paytm.jpg         → assets\icons\paytm.jpg
+
+HOW:
+  1. Download each file from the Claude response
+  2. Copy to: C:\Users\Guna S\Desktop\vayal\assets\icons\
+  3. Make sure filenames are EXACT (lowercase, correct extension)
+  4. Run: npx expo start --offline
+
+WHAT CHANGES IN THE APP:
+  - RoleSelect screen: Shows real farmer/owner images instead of emojis
+  - PaymentScreen: Shows GPay, PhonePe, Paytm logos instead of text buttons

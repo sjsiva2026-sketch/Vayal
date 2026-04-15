@@ -1,0 +1,37 @@
+PATH REFERENCE FOR VAYAL — Never get wrong paths again!
+
+Project root: C:\Users\Guna S\Desktop\vayal\
+
+ASSETS LOCATION:
+  vayal\assets\icons\Logo2.jpg
+  vayal\assets\images\harvester.jpeg
+  vayal\assets\images\rotavator.jpeg
+  vayal\assets\images\cultivator.jpeg
+  vayal\assets\images\straw-chopper.jpeg
+
+HOW TO IMPORT FROM EACH LOCATION:
+───────────────────────────────────────────────────────
+FROM: src\common\screens\SplashScreen.js
+      (3 levels deep: src → common → screens)
+USE:  require('../../../assets/icons/Logo2.jpg')
+      ↑ go up 3 times to reach vayal root, then into assets
+
+FROM: src\common\components\*.js
+      (3 levels deep: src → common → components)
+USE:  require('../../../assets/icons/Logo2.jpg')
+
+FROM: src\farmer\screens\CategoryScreen.js
+      (3 levels deep: src → farmer → screens)
+USE:  require('../../../assets/images/harvester.jpeg')
+
+FROM: src\owner\screens\*.js
+      (3 levels deep: src → owner → screens)
+USE:  require('../../../assets/images/harvester.jpeg')
+
+FROM: src\admin\screens\*.js
+      (3 levels deep: src → admin → screens)
+USE:  require('../../../assets/images/harvester.jpeg')
+
+RULE: All src\*\screens\ and src\*\components\ files
+      are exactly 3 levels deep → always use ../../../
+───────────────────────────────────────────────────────

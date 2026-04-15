@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Firebase secrets — NEVER commit these
+google-services.json
+GoogleService-Info.plist
+.env
+.env.local
+.env.production
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# Build outputs
+android/
+ios/

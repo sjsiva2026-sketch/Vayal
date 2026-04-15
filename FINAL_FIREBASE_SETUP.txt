@@ -1,0 +1,55 @@
+VAYAL — FINAL FIREBASE SETUP (2 steps only)
+============================================
+
+YOUR ERROR WAS: BILLING_NOT_ENABLED
+This means Firebase SMS costs money.
+SOLUTION: App now uses FREE custom OTP — no SMS needed!
+The OTP appears on screen after you tap "Get OTP".
+
+============================================
+STEP 1 — Enable Anonymous Authentication
+============================================
+Open: https://console.firebase.google.com/project/vayal-33b12/authentication/providers
+
+1. Click "Anonymous"
+2. Toggle to ENABLE
+3. Click Save
+
+That's it! Anonymous auth is FREE and has no billing requirement.
+
+============================================
+STEP 2 — Verify Firestore is in Test Mode
+============================================
+Open: https://console.firebase.google.com/project/vayal-33b12/firestore/rules
+
+Make sure rules say:
+  allow read, write: if request.time < timestamp.date(2026, 4, 19);
+
+If not, paste that and click Publish.
+
+============================================
+DONE! Now run the app:
+============================================
+
+  npx expo start
+
+HOW TO LOGIN:
+  1. Select Farmer 👨‍🌾
+  2. Enter any 10-digit number (e.g. 9999999999)
+  3. Tap "Get OTP"
+  4. OTP CODE APPEARS ON SCREEN — copy it
+  5. Enter the OTP in the next screen
+  6. Fill profile → Save
+  7. You're on Farmer Home! ✅
+
+NO SMS NEEDED. NO BILLING NEEDED. COMPLETELY FREE.
+
+============================================
+FOR PRODUCTION (when launching to real users)
+============================================
+Replace sendOTP in firebase/auth.js with:
+  - Twilio SMS API (cheap, ~₹0.50/SMS)
+  - MSG91 (Indian SMS provider)
+  - Fast2SMS (cheapest Indian option)
+
+These are much cheaper than Firebase SMS.
