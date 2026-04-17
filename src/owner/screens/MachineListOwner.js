@@ -1,54 +1,32 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView,
-  FlatList, TouchableOpacity, Alert,
+  FlatList, TouchableOpacity, Alert, Image,
 } from 'react-native';
 import { useFocusEffect }    from '@react-navigation/native';
 import { getMachinesByOwner, updateMachine, deleteMachine } from '../../../firebase/firestore';
 import { useUser }           from '../../../context/UserContext';
-import { getCategoryLabel, getCategoryIcon } from '../../../constants/categories';
+import { getCategoryLabel }  from '../../../constants/categories';
+import { CATEGORY_IMAGES }   from '../../../assets/index';
 import EmptyState            from '../../common/components/EmptyState';
 import Loader                from '../../common/components/Loader';
 import { COLORS }            from '../../../constants/colors';
-import { useState } from 'react';
+
+// ─── Machine type visual config ───────────────────────────────────────────────
+const MACHINE_THEME = {
+  harvester:    { bg: '#FFF8E7', border: '#F59E0B', label_color: '#92400E' },
+  rotavator:    { bg: '#EFF6FF', border: '#3B82F6', label_color: '#1D4ED8' },
+  cultivator:   { bg: '#F0FDF4', border: '#22C55E', label_color: '#166534' },
+  strawchopper: { bg: '#FEF2F2', border: '#EF4444', label_color: '#991B1B' },
+};
+const DEFAULT_THEME = { bg: '#F4F6F8', border: '#9CA3AF', label_color: '#374151' };
 
 // ─── 4 action icons per machine card ──────────────────────────────────────────
-// EDIT · TOGGLE · BOOKINGS · DELETE
-// Each uses a coloured circle badge with a caps abbreviation label below
-
 const ACTION_ICONS = [
-  {
-    key:    'edit',
-    icon:   '✏️',
-    label:  'EDIT',
-    bg:     '#EEF7FF',
-    color:  '#1D4ED8',
-    border: '#BFDBFE',
-  },
-  {
-    key:    'toggle',
-    icon:   '🔄',
-    label:  'STATUS',
-    bg:     '#F0FDF4',
-    color:  '#15803D',
-    border: '#BBF7D0',
-  },
-  {
-    key:    'bookings',
-    icon:   '📋',
-    label:  'REQUESTS',
-    bg:     '#FFF9E6',
-    color:  '#92400E',
-    border: '#FDE68A',
-  },
-  {
-    key:    'delete',
-    icon:   '🗑️',
-    label:  'DELETE',
-    bg:     '#FEF2F2',
-    color:  '#B91C1C',
-    border: '#FECACA',
-  },
+  { key: 'edit',     icon: '✏️', label: 'EDIT',     bg: '#EEF7FF', color: '#1D4ED8', border: '#BFDBFE' },
+  { key: 'toggle',   icon: '🔄', label: 'STATUS',   bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0' },
+  { key: 'bookings', icon: '📋', label: 'REQUESTS', bg: '#FFF9E6', color: '#92400E', border: '#FDE68A' },
+  { key: 'delete',   icon: '🗑️', label: 'DELETE',   bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA' },
 ];
 
 export default function MachineListOwner({ navigation }) {
@@ -94,7 +72,7 @@ export default function MachineListOwner({ navigation }) {
         Alert.alert(
           item.isActive ? 'Deactivate Machine?' : 'Activate Machine?',
           item.isActive
-            ? 'Farmers won\'t be able to book this machine.'
+            ? "Farmers won't be able to book this machine."
             : 'This machine will be visible to farmers.',
           [
             { text: 'Cancel', style: 'cancel' },
@@ -137,22 +115,35 @@ export default function MachineListOwner({ navigation }) {
           />
         }
         renderItem={({ item }) => {
-          const label = getCategoryLabel(item.type);
-          const icon  = getCategoryIcon(item.type);
+          const label  = getCategoryLabel(item.type);
+          const img    = CATEGORY_IMAGES[item.type];
+          const theme  = MACHINE_THEME[item.type] || DEFAULT_THEME;
+
           return (
             <View style={s.card}>
 
               {/* ── Card Header ── */}
               <View style={s.cardHeader}>
-                <View style={s.iconCircle}>
-                  <Text style={s.iconCircleTxt}>{icon}</Text>
-                </View>
-                <View style={s.headerMid}>
-                  <Text style={s.machineType}>{label}</Text>
-                  <Text style={s.metaRow}>
-                    💰 ₹{item.price_per_hour}/hr  ·  📍 {item.taluk}
+
+                {/* Machine image + name block */}
+                <View style={[s.imageBlock, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+                  {img
+                    ? <Image source={img} style={s.machineImage} resizeMode="contain" />
+                    : <Text style={s.fallbackEmoji}>🚜</Text>
+                  }
+                  <Text style={[s.imageBlockLabel, { color: theme.label_color }]} numberOfLines={1}>
+                    {label}
                   </Text>
                 </View>
+
+                {/* Info block */}
+                <View style={s.headerInfo}>
+                  <Text style={s.machineType}>{label}</Text>
+                  <Text style={s.metaRow}>💰 ₹{item.price_per_hour}/hr</Text>
+                  <Text style={s.metaRow}>📍 {item.taluk}</Text>
+                  {item.district ? <Text style={s.metaRow}>🗺️ {item.district}</Text> : null}
+                </View>
+
                 {/* Active / Inactive pill */}
                 <View style={[
                   s.statusPill,
@@ -174,23 +165,12 @@ export default function MachineListOwner({ navigation }) {
               {/* ── 4 Action Icons ── */}
               <View style={s.actionsRow}>
                 {ACTION_ICONS.map((a) => {
-                  // Dynamically override toggle appearance based on current state
                   const isToggle = a.key === 'toggle';
-                  const bg     = isToggle
-                    ? (item.isActive ? '#FEF2F2' : '#F0FDF4')
-                    : a.bg;
-                  const color  = isToggle
-                    ? (item.isActive ? '#B91C1C' : '#15803D')
-                    : a.color;
-                  const border = isToggle
-                    ? (item.isActive ? '#FECACA' : '#BBF7D0')
-                    : a.border;
-                  const dynIcon  = isToggle
-                    ? (item.isActive ? '⏸️' : '▶️')
-                    : a.icon;
-                  const dynLabel = isToggle
-                    ? (item.isActive ? 'PAUSE' : 'RESUME')
-                    : a.label;
+                  const bg     = isToggle ? (item.isActive ? '#FEF2F2' : '#F0FDF4') : a.bg;
+                  const color  = isToggle ? (item.isActive ? '#B91C1C' : '#15803D') : a.color;
+                  const border = isToggle ? (item.isActive ? '#FECACA' : '#BBF7D0') : a.border;
+                  const dynIcon  = isToggle ? (item.isActive ? '⏸️' : '▶️') : a.icon;
+                  const dynLabel = isToggle ? (item.isActive ? 'PAUSE' : 'RESUME') : a.label;
 
                   return (
                     <TouchableOpacity
@@ -217,17 +197,17 @@ export default function MachineListOwner({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  safe:          { flex: 1, backgroundColor: COLORS.background },
+  safe:    { flex: 1, backgroundColor: COLORS.background },
 
-  addBtn:        {
+  addBtn:  {
     backgroundColor: COLORS.primary,
     borderRadius: 14, padding: 16,
     alignItems: 'center', marginBottom: 16, elevation: 3,
   },
-  addTxt:        { color: '#fff', fontWeight: '800', fontSize: 15 },
+  addTxt:  { color: '#fff', fontWeight: '800', fontSize: 15 },
 
   // ── Card ──
-  card:          {
+  card: {
     backgroundColor: '#fff',
     borderRadius: 18, padding: 16,
     marginBottom: 14, elevation: 3,
@@ -235,21 +215,31 @@ const s = StyleSheet.create({
 
   // ── Card Header ──
   cardHeader:    { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  iconCircle:    {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: '#F4F6F8',
+
+  // Machine image block with name beneath
+  imageBlock: {
+    width: 80, height: 86,
+    borderRadius: 14, borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 12, paddingHorizontal: 4, paddingBottom: 4,
   },
-  iconCircleTxt: { fontSize: 26 },
-  headerMid:     { flex: 1 },
-  machineType:   { fontSize: 17, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 3 },
-  metaRow:       { fontSize: 12, color: COLORS.textSecondary },
+  machineImage:   { width: 54, height: 46 },
+  fallbackEmoji:  { fontSize: 30 },
+  imageBlockLabel:{
+    fontSize: 9, fontWeight: '800',
+    textAlign: 'center', marginTop: 4,
+    letterSpacing: 0.3,
+  },
+
+  // Info
+  headerInfo:    { flex: 1 },
+  machineType:   { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 4 },
+  metaRow:       { fontSize: 12, color: COLORS.textSecondary, marginTop: 1 },
 
   statusPill:    {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20,
+    borderRadius: 20, alignSelf: 'flex-start',
   },
   statusDot:     { width: 7, height: 7, borderRadius: 4, marginRight: 5 },
   statusTxt:     { fontSize: 11, fontWeight: '800' },

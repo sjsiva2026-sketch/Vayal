@@ -4,7 +4,10 @@ import {
   Alert, ScrollView,
 } from 'react-native';
 import { LinearGradient }      from 'expo-linear-gradient';
-import { updateBooking, upsertDailyPayment, getDailyPayment } from '../../../firebase/firestore';
+import {
+  updateBooking, upsertDailyPayment, getDailyPayment,
+  getMachineDailyHectares,
+} from '../../../firebase/firestore';
 import { useUser }             from '../../../context/UserContext';
 import { calculateCommission } from '../../../utils/calculateCommission';
 import { todayString }         from '../../../utils/dateFormatter';
@@ -15,6 +18,8 @@ import PhoneConnect            from '../../common/components/PhoneConnect';
 import Input                   from '../../common/components/Input';
 import Button                  from '../../common/components/Button';
 import { COLORS }              from '../../../constants/colors';
+
+const MAX = CONFIG.MAX_HECTARES_PER_DAY; // 5
 
 export default function WorkComplete({ navigation, route }) {
   const { booking }                   = route.params;
@@ -30,12 +35,37 @@ export default function WorkComplete({ navigation, route }) {
   const handleComplete = async () => {
     const v = validateHectare(hectareDone);
     if (!v.valid) { Alert.alert('Invalid Hectare', v.error); return; }
-    const hc   = parseFloat(hectareDone);
-    const comm = calculateCommission(hc);
-    const today = todayString();
+
+    const hc    = parseFloat(hectareDone);
+    const today = booking.date || todayString();
+
     setLoading(true);
     try {
+      // ── Check machine daily limit ──────────────────────────────────────────
+      // Exclude the current booking's originally requested hectares from the
+      // total so we only count OTHER bookings, then add what's being completed.
+      const totalMachineUsed = await getMachineDailyHectares(booking.machineId, today);
+      // totalMachineUsed already includes this booking's hectareRequested
+      // (since status is 'ongoing'). Subtract it and re-add the actual hc.
+      const alreadyUsed = totalMachineUsed - (booking.hectareRequested || 0);
+      const newTotal    = alreadyUsed + hc;
+
+      if (newTotal > MAX) {
+        const allowedForThisJob = MAX - alreadyUsed;
+        Alert.alert(
+          '🚜 Machine Daily Limit',
+          allowedForThisJob <= 0
+            ? `This machine has already completed ${MAX} ha today. Cannot record more work.`
+            : `This machine can only complete ${allowedForThisJob.toFixed(2)} more ha today (daily max: ${MAX} ha).\nPlease enter ≤ ${allowedForThisJob.toFixed(2)} ha.`,
+        );
+        setLoading(false);
+        return;
+      }
+
+      // ── Save completion ────────────────────────────────────────────────────
+      const comm = calculateCommission(hc);
       await updateBooking(booking.id, { status: 'completed', hectareCompleted: hc, commission: comm });
+
       const existing = await getDailyPayment(uid, today);
       await upsertDailyPayment(uid, today, {
         ownerName:       userProfile?.name  || '',
@@ -44,6 +74,7 @@ export default function WorkComplete({ navigation, route }) {
         totalCommission: (existing?.totalCommission || 0) + comm,
         status: 'unpaid',
       });
+
       navigation.replace('DailySummary');
     } catch (e) {
       Alert.alert('Error', e.message || 'Failed to save. Try again.');
@@ -62,6 +93,11 @@ export default function WorkComplete({ navigation, route }) {
           <Text style={s.headerTitle}>Complete Work</Text>
           <Text style={s.headerSub}>Enter the actual hectares completed on the field</Text>
         </LinearGradient>
+
+        {/* ── Daily limit info banner ── */}
+        <View style={s.limitBanner}>
+          <Text style={s.limitTxt}>🚜 Machine limit: {MAX} ha max per day</Text>
+        </View>
 
         {/* ── Job summary ── */}
         <View style={s.section}>
@@ -87,10 +123,10 @@ export default function WorkComplete({ navigation, route }) {
         {/* ── Hectare input ── */}
         <View style={s.section}>
           <Input
-            label="✏️ Actual Hectare Completed *"
+            label={`✏️ Actual Hectare Completed * (max ${MAX} ha/day per machine)`}
             value={hectareDone}
             onChangeText={setHectareDone}
-            placeholder="e.g. 2.0"
+            placeholder={`e.g. 2.0  (daily cap: ${MAX} ha)`}
             keyboardType="decimal-pad"
           />
         </View>
@@ -133,6 +169,12 @@ const s = StyleSheet.create({
   headerIcon:  { fontSize: 48, marginBottom: 12 },
   headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 6 },
   headerSub:   { fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 20 },
+
+  limitBanner: {
+    backgroundColor: '#FFF9E6', borderLeftWidth: 4, borderLeftColor: '#F59E0B',
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  limitTxt:    { fontSize: 13, color: '#92400E', fontWeight: '600' },
 
   section:     { paddingHorizontal: 16, marginTop: 20 },
   sectionTitle:{ fontSize: 14, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 10 },

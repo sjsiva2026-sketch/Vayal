@@ -2,11 +2,11 @@
 import {
   collection, doc,
   getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
-  query, where, onSnapshot, serverTimestamp,
+  query, where, onSnapshot, serverTimestamp, increment,
 } from 'firebase/firestore';
 import { db } from './config';
 
-// USERS
+// ─── USERS ────────────────────────────────────────────────────────────────────
 export const createUser = (uid, data) =>
   setDoc(doc(db, 'users', uid), { ...data, createdAt: serverTimestamp() });
 
@@ -21,7 +21,7 @@ export const getUser = async (uid) => {
 export const updateUser = (uid, data) =>
   updateDoc(doc(db, 'users', uid), data);
 
-// MACHINES
+// ─── MACHINES ─────────────────────────────────────────────────────────────────
 export const addMachine = (data) =>
   addDoc(collection(db, 'machines'), { ...data, createdAt: serverTimestamp() });
 
@@ -47,7 +47,7 @@ export const updateMachine = (id, data) =>
 export const deleteMachine = (id) =>
   deleteDoc(doc(db, 'machines', id));
 
-// BOOKINGS
+// ─── BOOKINGS ─────────────────────────────────────────────────────────────────
 export const createBooking = (data) =>
   addDoc(collection(db, 'bookings'), { ...data, createdAt: serverTimestamp() });
 
@@ -65,29 +65,53 @@ export const getBookingsByOwner = (ownerId) =>
 export const updateBooking = (id, data) =>
   updateDoc(doc(db, 'bookings', id), data);
 
-// BUG FIX: Accept an optional onError callback so callers can show error UI
-// instead of silently failing. Falls back to console.warn if not provided.
+export const cancelBooking = (id) =>
+  updateDoc(doc(db, 'bookings', id), {
+    status: 'cancelled',
+    cancelledAt: serverTimestamp(),
+  });
+
+// ─── DAILY HECTARE LIMITS ─────────────────────────────────────────────────────
+export const getFarmerDailyHectares = async (farmerId, date) => {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'bookings'), where('farmerId', '==', farmerId), where('date', '==', date))
+    );
+    const ACTIVE = new Set(['pending', 'accepted', 'ongoing', 'completed']);
+    let total = 0;
+    snap.docs.forEach(d => { const b = d.data(); if (ACTIVE.has(b.status)) total += (b.hectareRequested || 0); });
+    return total;
+  } catch { return 0; }
+};
+
+export const getMachineDailyHectares = async (machineId, date) => {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'bookings'), where('machineId', '==', machineId), where('date', '==', date))
+    );
+    const ACTIVE = new Set(['accepted', 'ongoing', 'completed']);
+    let total = 0;
+    snap.docs.forEach(d => { const b = d.data(); if (ACTIVE.has(b.status)) total += (b.hectareRequested || 0); });
+    return total;
+  } catch { return 0; }
+};
+
+// ─── REAL-TIME LISTENERS ──────────────────────────────────────────────────────
 export const listenBookingsByOwner = (ownerId, onData, onError) =>
   onSnapshot(
     query(collection(db, 'bookings'), where('ownerId', '==', ownerId)),
     (snap) => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-    (e) => {
-      console.warn('listenBookingsByOwner:', e.message);
-      if (typeof onError === 'function') onError(e);
-    },
+    (e) => { console.warn('listenBookingsByOwner:', e.message); if (typeof onError === 'function') onError(e); },
   );
 
 export const listenBookingsByFarmer = (farmerId, onData, onError) =>
   onSnapshot(
     query(collection(db, 'bookings'), where('farmerId', '==', farmerId)),
     (snap) => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-    (e) => {
-      console.warn('listenBookingsByFarmer:', e.message);
-      if (typeof onError === 'function') onError(e);
-    },
+    (e) => { console.warn('listenBookingsByFarmer:', e.message); if (typeof onError === 'function') onError(e); },
   );
 
-// DAILY PAYMENTS
+// ─── DAILY PAYMENTS ───────────────────────────────────────────────────────────
 export const getDailyPayment = async (ownerId, date) => {
   try {
     const snap = await getDoc(doc(db, 'dailyPayments', `${ownerId}_${date}`));
@@ -108,3 +132,80 @@ export const getUnpaidPayments = (ownerId) =>
     where('ownerId', '==', ownerId),
     where('status',  '==', 'unpaid'),
   ));
+
+// ─── APP CURRENT ACCOUNT ──────────────────────────────────────────────────────
+/**
+ * Add one commission payment entry to the app's current account ledger.
+ * Collection: appAccount  (one doc per payment transaction)
+ * Also increments the running balance in appAccount/summary (a single summary doc).
+ *
+ * @param {object} entry  { ownerId, ownerName, ownerPhone, amount, hectare, date, paymentMethod }
+ */
+export const addAppAccountEntry = async (entry) => {
+  // 1. Add ledger row
+  await addDoc(collection(db, 'appAccount'), {
+    ...entry,
+    type: 'commission',
+    createdAt: serverTimestamp(),
+  });
+
+  // 2. Upsert running summary (single doc: appAccount_summary/total)
+  await setDoc(
+    doc(db, 'appAccountSummary', 'total'),
+    {
+      totalReceived:  increment(entry.amount),
+      totalHectare:   increment(entry.hectare || 0),
+      totalEntries:   increment(1),
+      lastUpdated:    serverTimestamp(),
+    },
+    { merge: true },
+  );
+};
+
+/**
+ * Get the app-level running totals (admin use).
+ */
+export const getAppAccountSummary = async () => {
+  try {
+    const snap = await getDoc(doc(db, 'appAccountSummary', 'total'));
+    return snap.exists() ? snap.data() : { totalReceived: 0, totalHectare: 0, totalEntries: 0 };
+  } catch { return { totalReceived: 0, totalHectare: 0, totalEntries: 0 }; }
+};
+
+/**
+ * Get paginated / filtered app account ledger entries (admin use).
+ */
+export const getAppAccountEntries = () =>
+  getDocs(collection(db, 'appAccount'));
+
+/**
+ * Get commission entries paid by a specific owner (for owner's own history).
+ */
+export const getAppAccountByOwner = (ownerId) =>
+  getDocs(query(
+    collection(db, 'appAccount'),
+    where('ownerId', '==', ownerId),
+  ));
+
+// ─── RATINGS ─────────────────────────────────────────────────────────────────
+export const submitRating = async (data) => {
+  await setDoc(doc(db, 'ratings', data.bookingId), { ...data, createdAt: serverTimestamp() });
+  await updateDoc(doc(db, 'bookings', data.bookingId), { rated: true });
+};
+
+export const getRating = async (bookingId) => {
+  try {
+    const snap = await getDoc(doc(db, 'ratings', bookingId));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  } catch { return null; }
+};
+
+export const getRatingsByOwner = (ownerId) =>
+  getDocs(query(collection(db, 'ratings'), where('ownerId', '==', ownerId)));
+
+export const listenRatingsByOwner = (ownerId, onData) =>
+  onSnapshot(
+    query(collection(db, 'ratings'), where('ownerId', '==', ownerId)),
+    (snap) => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    (e) => console.warn('listenRatingsByOwner:', e.message),
+  );

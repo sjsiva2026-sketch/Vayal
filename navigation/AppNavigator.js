@@ -27,6 +27,7 @@ import BookingScreen  from '../src/farmer/screens/BookingScreen';
 import BookingConfirm from '../src/farmer/screens/BookingConfirm';
 import BookingHistory from '../src/farmer/screens/BookingHistory';
 import FarmerProfile  from '../src/farmer/screens/FarmerProfile';
+import RatingScreen   from '../src/farmer/screens/RatingScreen';
 
 // Owner
 import OwnerDashboard   from '../src/owner/screens/OwnerDashboard';
@@ -43,11 +44,12 @@ import PaymentScreen    from '../src/owner/screens/PaymentScreen';
 import OwnerProfile     from '../src/owner/screens/OwnerProfile';
 
 // Admin
-import AdminDashboard from '../src/admin/screens/AdminDashboard';
-import UsersList      from '../src/admin/screens/UsersList';
-import MachinesList   from '../src/admin/screens/MachinesList';
-import PaymentsList   from '../src/admin/screens/PaymentsList';
-import Reports        from '../src/admin/screens/Reports';
+import AdminDashboard   from '../src/admin/screens/AdminDashboard';
+import UsersList        from '../src/admin/screens/UsersList';
+import MachinesList     from '../src/admin/screens/MachinesList';
+import PaymentsList     from '../src/admin/screens/PaymentsList';
+import Reports          from '../src/admin/screens/Reports';
+import AdminAppAccount  from '../src/admin/screens/AdminAppAccount';
 
 const Stack = createNativeStackNavigator();
 
@@ -90,7 +92,6 @@ export default function AppNavigator() {
   const { user, loading: authLoading, userProfile: authProfile } = useAuth();
   const { userProfile: ctxProfile, setUserProfile }              = useUser();
 
-  // Safety — never freeze on splash > 8 s
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 8000);
@@ -131,6 +132,7 @@ export default function AppNavigator() {
         <Stack.Screen name="BookingConfirm" component={BookingConfirm}  options={{ title: 'Booking Confirmed' }} />
         <Stack.Screen name="BookingHistory" component={BookingHistory}  options={{ title: 'My Bookings' }} />
         <Stack.Screen name="FarmerProfile"  component={FarmerProfile}   options={{ title: 'My Profile' }} />
+        <Stack.Screen name="RatingScreen"   component={RatingScreen}    options={{ title: 'Rate Experience' }} />
 
         {/* Owner */}
         <Stack.Screen name="OwnerDashboard"   component={OwnerDashboard}   options={{ headerShown: false }} />
@@ -147,11 +149,12 @@ export default function AppNavigator() {
         <Stack.Screen name="OwnerProfile"     component={OwnerProfile}     options={{ title: 'My Profile' }} />
 
         {/* Admin */}
-        <Stack.Screen name="AdminDashboard" component={AdminDashboard} options={{ title: 'Admin' }} />
-        <Stack.Screen name="UsersList"      component={UsersList}      options={{ title: 'Users' }} />
-        <Stack.Screen name="MachinesList"   component={MachinesList}   options={{ title: 'Machines' }} />
-        <Stack.Screen name="PaymentsList"   component={PaymentsList}   options={{ title: 'Payments' }} />
-        <Stack.Screen name="Reports"        component={Reports}        options={{ title: 'Reports' }} />
+        <Stack.Screen name="AdminDashboard"  component={AdminDashboard}  options={{ headerShown: false }} />
+        <Stack.Screen name="UsersList"       component={UsersList}       options={{ title: 'Users' }} />
+        <Stack.Screen name="MachinesList"    component={MachinesList}    options={{ title: 'Machines' }} />
+        <Stack.Screen name="PaymentsList"    component={PaymentsList}    options={{ title: 'Payments' }} />
+        <Stack.Screen name="Reports"         component={Reports}         options={{ title: 'Reports' }} />
+        <Stack.Screen name="AdminAppAccount" component={AdminAppAccount} options={{ title: 'App Bank Account' }} />
 
       </Stack.Navigator>
     </NavigationContainer>
