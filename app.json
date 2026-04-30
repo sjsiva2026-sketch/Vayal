@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Vayal",
-    "slug": "vayal",
+    "name": "Namma Vayal",
+    "slug": "namma-vayal",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -12,19 +12,25 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.vayal.app"
+      "bundleIdentifier": "com.nammavayal.app"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#1C7C54"
       },
-      "package": "com.vayal.app",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.nammavayal.app",
+      "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "nammavayal" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
-    "web": {
-      "bundler": "metro"
-    },
-    "scheme": "vayal",
+    "web": { "bundler": "metro" },
+    "scheme": "nammavayal",
     "plugins": []
   }
 }

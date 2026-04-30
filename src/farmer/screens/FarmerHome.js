@@ -3,7 +3,8 @@ import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
   TouchableOpacity, Alert, Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient }  from 'expo-linear-gradient';
+import { CommonActions }   from '@react-navigation/native';
 import { useUser }   from '../../../context/UserContext';
 import { useAuth }   from '../../../context/AuthContext';
 import { COLORS }    from '../../../constants/colors';
@@ -52,7 +53,9 @@ export default function FarmerHome({ navigation }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Logout', style: 'destructive', onPress: async () => {
         await logout(); clearProfile(); setUser(null);
-        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+        navigation.dispatch(
+          CommonActions.reset({ index: 0, routes: [{ name: 'RoleSelect' }] })
+        );
       }},
     ]);
 

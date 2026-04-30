@@ -14,8 +14,8 @@ export default function SplashScreen({ navigation }) {
       <View style={styles.logoWrap}>
         <Text style={styles.logoEmoji}>🌾</Text>
       </View>
-      <Text style={styles.title}>VAYAL</Text>
-      <Text style={styles.titleTamil}>வாயல்</Text>
+      <Text style={styles.title}>Namma Vayal</Text>
+      <Text style={styles.titleTamil}>நம்ம வயல்</Text>
       <Text style={styles.tagline}>Farmer–Machine Connect</Text>
       <View style={styles.dots}>
         {[0, 1, 2].map(i => (
@@ -30,8 +30,8 @@ const styles = StyleSheet.create({
   container:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   logoWrap:   { width: 140, height: 140, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 28, elevation: 10 },
   logoEmoji:  { fontSize: 70 },
-  title:      { fontSize: 52, fontWeight: '900', color: '#fff', letterSpacing: 12, marginBottom: 4 },
-  titleTamil: { fontSize: 22, color: 'rgba(255,255,255,0.75)', marginBottom: 8 },
+  title:      { fontSize: 40, fontWeight: '900', color: '#fff', letterSpacing: 3, marginBottom: 4 },
+  titleTamil: { fontSize: 22, color: 'rgba(255,255,255,0.75)', marginBottom: 8, letterSpacing: 2 },
   tagline:    { fontSize: 14, color: 'rgba(255,255,255,0.7)', letterSpacing: 1.5 },
   dots:       { flexDirection: 'row', position: 'absolute', bottom: 60 },
   dot:        { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 4 },

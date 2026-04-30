@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, Alert, ScrollView } from 'react-native';
+import { LinearGradient }   from 'expo-linear-gradient';
 import {
-  View, Text, StyleSheet, SafeAreaView,
-  Alert, ScrollView,
-} from 'react-native';
-import { LinearGradient }      from 'expo-linear-gradient';
-import {
-  updateBooking, upsertDailyPayment, getDailyPayment,
-  getMachineDailyHectares,
+  updateBooking,
+  upsertDailyPayment, getDailyPayment,
 } from '../../../firebase/firestore';
 import { useUser }             from '../../../context/UserContext';
 import { calculateCommission } from '../../../utils/calculateCommission';
@@ -19,61 +16,61 @@ import Input                   from '../../common/components/Input';
 import Button                  from '../../common/components/Button';
 import { COLORS }              from '../../../constants/colors';
 
-const MAX = CONFIG.MAX_HECTARES_PER_DAY; // 5
-
 export default function WorkComplete({ navigation, route }) {
-  const { booking }                   = route.params;
-  const { userProfile }               = useUser();
-  const uid                           = userProfile?.id || '';
-  const [hectareDone, setHectareDone] = useState(String(booking.hectareRequested || ''));
-  const [loading, setLoading]         = useState(false);
+  const { booking }                    = route.params;
+  const { userProfile }                = useUser();
+  const uid                            = userProfile?.id || '';
+  const [hectareDone, setHectareDone]  = useState(String(booking.hectareRequested || ''));
+  const [loading, setLoading]          = useState(false);
 
   const commission   = calculateCommission(parseFloat(hectareDone) || 0);
   const rate         = CONFIG.COMMISSION_PER_HECTARE;
   const machineLabel = booking.machineTypeLabel || getCategoryLabel(booking.machineType);
+  const today        = booking.date || todayString();
+
+  const workStartStr = booking.workStartedAt
+    ? new Date(booking.workStartedAt).toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      })
+    : null;
 
   const handleComplete = async () => {
     const v = validateHectare(hectareDone);
     if (!v.valid) { Alert.alert('Invalid Hectare', v.error); return; }
 
-    const hc    = parseFloat(hectareDone);
-    const today = booking.date || todayString();
+    const hc   = parseFloat(hectareDone);
+    const comm = calculateCommission(hc);
+    const now  = new Date().toISOString();
 
     setLoading(true);
     try {
-      // ── Check machine daily limit ──────────────────────────────────────────
-      // Exclude the current booking's originally requested hectares from the
-      // total so we only count OTHER bookings, then add what's being completed.
-      const totalMachineUsed = await getMachineDailyHectares(booking.machineId, today);
-      // totalMachineUsed already includes this booking's hectareRequested
-      // (since status is 'ongoing'). Subtract it and re-add the actual hc.
-      const alreadyUsed = totalMachineUsed - (booking.hectareRequested || 0);
-      const newTotal    = alreadyUsed + hc;
+      // 1. Mark booking completed
+      await updateBooking(booking.id, {
+        status:           'completed',
+        hectareCompleted: hc,
+        commission:       comm,
+        completedAt:      now,
+      });
 
-      if (newTotal > MAX) {
-        const allowedForThisJob = MAX - alreadyUsed;
-        Alert.alert(
-          '🚜 Machine Daily Limit',
-          allowedForThisJob <= 0
-            ? `This machine has already completed ${MAX} ha today. Cannot record more work.`
-            : `This machine can only complete ${allowedForThisJob.toFixed(2)} more ha today (daily max: ${MAX} ha).\nPlease enter ≤ ${allowedForThisJob.toFixed(2)} ha.`,
-        );
-        setLoading(false);
-        return;
-      }
+      // 2. Accumulate commission totals in daily payment doc
+      //    paymentDeadline already set by WorkStartOTP — keep it as-is
+      const existing           = await getDailyPayment(uid, today);
+      const newTotalHectare    = (existing?.totalHectare    || 0) + hc;
+      const newTotalCommission = (existing?.totalCommission || 0) + comm;
 
-      // ── Save completion ────────────────────────────────────────────────────
-      const comm = calculateCommission(hc);
-      await updateBooking(booking.id, { status: 'completed', hectareCompleted: hc, commission: comm });
-
-      const existing = await getDailyPayment(uid, today);
       await upsertDailyPayment(uid, today, {
         ownerName:       userProfile?.name  || '',
         ownerPhone:      userProfile?.phone || '',
-        totalHectare:    (existing?.totalHectare    || 0) + hc,
-        totalCommission: (existing?.totalCommission || 0) + comm,
-        status: 'unpaid',
+        totalHectare:    newTotalHectare,
+        totalCommission: newTotalCommission,
+        status:          'unpaid',
+        workStartedAt:   existing?.workStartedAt   || now,
+        paymentDeadline: existing?.paymentDeadline || now,
       });
+
+      // NOTE: Do NOT set isLocked here.
+      // Lock happens automatically in AppNavigator when
+      // paymentDeadline (set at WorkStartOTP) passes 24 hours.
 
       navigation.replace('DailySummary');
     } catch (e) {
@@ -87,19 +84,25 @@ export default function WorkComplete({ navigation, route }) {
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── Header ── */}
         <LinearGradient colors={['#145A3E', '#1C7C54']} style={s.header}>
           <Text style={s.headerIcon}>✅</Text>
           <Text style={s.headerTitle}>Complete Work</Text>
-          <Text style={s.headerSub}>Enter the actual hectares completed on the field</Text>
+          <Text style={s.headerSub}>Enter actual hectares — commission calculated automatically</Text>
+          {workStartStr && (
+            <View style={s.startPill}>
+              <Text style={s.startPillTxt}>
+                ⏱️ Work started at {workStartStr} · Pay commission within 24 hrs
+              </Text>
+            </View>
+          )}
         </LinearGradient>
 
-        {/* ── Daily limit info banner ── */}
-        <View style={s.limitBanner}>
-          <Text style={s.limitTxt}>🚜 Machine limit: {MAX} ha max per day</Text>
+        <View style={s.noticeBanner}>
+          <Text style={s.noticeTxt}>
+            ⚠️ Pay commission within 24 hours of work start to keep your account active.
+          </Text>
         </View>
 
-        {/* ── Job summary ── */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Job Summary</Text>
           <View style={s.summaryRow}>
@@ -120,39 +123,38 @@ export default function WorkComplete({ navigation, route }) {
           </View>
         </View>
 
-        {/* ── Hectare input ── */}
         <View style={s.section}>
           <Input
-            label={`✏️ Actual Hectare Completed * (max ${MAX} ha/day per machine)`}
+            label="Actual Hectare Completed *"
             value={hectareDone}
             onChangeText={setHectareDone}
-            placeholder={`e.g. 2.0  (daily cap: ${MAX} ha)`}
+            placeholder="e.g. 2.0"
             keyboardType="decimal-pad"
           />
         </View>
 
-        {/* ── Commission preview ── */}
         {hectareDone ? (
           <View style={s.section}>
             <View style={s.commCard}>
-              <Text style={s.commLabel}>Commission Due</Text>
-              <Text style={s.commValue}>₹{commission}</Text>
-              <Text style={s.commRate}>₹{rate} × {hectareDone} ha</Text>
+              <Text style={s.commLabel}>Commission to Pay</Text>
+              <Text style={s.commValue}>Rs.{commission}</Text>
+              <Text style={s.commRate}>Rs.{rate} × {hectareDone} ha</Text>
+              <View style={s.commNote}>
+                <Text style={s.commNoteTxt}>Due within 24 hrs from work start time</Text>
+              </View>
             </View>
           </View>
         ) : null}
 
-        {/* ── Contact farmer ── */}
         {booking.farmerPhone && (
           <View style={s.section}>
-            <Text style={s.sectionTitle}>📞 Confirm with Farmer</Text>
-            <PhoneConnect phone={booking.farmerPhone} name={booking.farmerName || 'Farmer'} role="Farmer 👨‍🌾" />
+            <Text style={s.sectionTitle}>Confirm with Farmer</Text>
+            <PhoneConnect phone={booking.farmerPhone} name={booking.farmerName || 'Farmer'} role="Farmer" />
           </View>
         )}
 
-        {/* ── Submit ── */}
         <View style={s.section}>
-          <Button title="✅ Submit & Complete" onPress={handleComplete} loading={loading} />
+          <Button title="Submit & Complete Work" onPress={handleComplete} loading={loading} />
         </View>
 
         <View style={{ height: 24 }} />
@@ -162,31 +164,27 @@ export default function WorkComplete({ navigation, route }) {
 }
 
 const s = StyleSheet.create({
-  safe:        { flex: 1, backgroundColor: COLORS.background },
-  scroll:      { paddingBottom: 32 },
-
-  header:      { paddingTop: 36, paddingBottom: 32, paddingHorizontal: 24, alignItems: 'center' },
-  headerIcon:  { fontSize: 48, marginBottom: 12 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 6 },
-  headerSub:   { fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 20 },
-
-  limitBanner: {
-    backgroundColor: '#FFF9E6', borderLeftWidth: 4, borderLeftColor: '#F59E0B',
-    paddingHorizontal: 16, paddingVertical: 10,
-  },
-  limitTxt:    { fontSize: 13, color: '#92400E', fontWeight: '600' },
-
-  section:     { paddingHorizontal: 16, marginTop: 20 },
-  sectionTitle:{ fontSize: 14, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 10 },
-
-  summaryRow:  { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 14, padding: 16, elevation: 2, alignItems: 'center' },
-  summaryItem: { flex: 1, alignItems: 'center' },
-  summaryDiv:  { width: 1, height: 36, backgroundColor: COLORS.border },
-  summaryLabel:{ fontSize: 11, color: COLORS.textSecondary, marginBottom: 5 },
-  summaryVal:  { fontSize: 14, fontWeight: '800', color: COLORS.textPrimary },
-
-  commCard:    { backgroundColor: COLORS.primary, borderRadius: 14, padding: 24, alignItems: 'center' },
-  commLabel:   { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 8 },
-  commValue:   { fontSize: 40, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  commRate:    { fontSize: 13, color: 'rgba(255,255,255,0.6)' },
+  safe:         { flex: 1, backgroundColor: COLORS.background },
+  scroll:       { paddingBottom: 32 },
+  header:       { paddingTop: 36, paddingBottom: 28, paddingHorizontal: 24, alignItems: 'center' },
+  headerIcon:   { fontSize: 48, marginBottom: 12 },
+  headerTitle:  { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 6 },
+  headerSub:    { fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 20, marginBottom: 12 },
+  startPill:    { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
+  startPillTxt: { fontSize: 12, color: '#fff', fontWeight: '700', textAlign: 'center' },
+  noticeBanner: { backgroundColor: '#FFF3CD', borderLeftWidth: 4, borderLeftColor: '#F59E0B', paddingHorizontal: 16, paddingVertical: 12 },
+  noticeTxt:    { fontSize: 13, color: '#856404', fontWeight: '600', lineHeight: 20 },
+  section:      { paddingHorizontal: 16, marginTop: 20 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 10 },
+  summaryRow:   { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 14, padding: 16, elevation: 2, alignItems: 'center' },
+  summaryItem:  { flex: 1, alignItems: 'center' },
+  summaryDiv:   { width: 1, height: 36, backgroundColor: COLORS.border },
+  summaryLabel: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 5 },
+  summaryVal:   { fontSize: 14, fontWeight: '800', color: COLORS.textPrimary },
+  commCard:     { backgroundColor: COLORS.primary, borderRadius: 14, padding: 24, alignItems: 'center' },
+  commLabel:    { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 8 },
+  commValue:    { fontSize: 40, fontWeight: '900', color: '#fff', marginBottom: 4 },
+  commRate:     { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 14 },
+  commNote:     { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 6 },
+  commNoteTxt:  { fontSize: 12, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
 });

@@ -1,8 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, SafeAreaView,
-  ScrollView, TouchableOpacity,
-} from 'react-native';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
 import { LinearGradient }  from 'expo-linear-gradient';
 import { useFocusEffect }  from '@react-navigation/native';
 import { getDailyPayment, getBookingsByOwner } from '../../../firebase/firestore';
@@ -15,13 +12,24 @@ import EarningsCard        from '../components/EarningsCard';
 import SummaryCard         from '../components/SummaryCard';
 import { COLORS }          from '../../../constants/colors';
 
+// Format seconds into HH:MM:SS countdown
+const fmtCountdown = (secs) => {
+  if (secs <= 0) return '00:00:00';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+};
+
 export default function DailySummary({ navigation }) {
   const { userProfile }       = useUser();
   const uid                   = userProfile?.id || '';
   const [summary, setSummary] = useState(null);
   const [jobs, setJobs]       = useState([]);
   const [loading, setLoading] = useState(true);
-  const today                 = todayString();
+  const [countdown, setCountdown] = useState(null); // seconds remaining
+  const timerRef = useRef(null);
+  const today    = todayString();
 
   useFocusEffect(useCallback(() => {
     if (!uid) { setLoading(false); return; }
@@ -35,9 +43,21 @@ export default function DailySummary({ navigation }) {
         ]);
         if (!alive) return;
         setSummary(payment);
-        setJobs(snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter(b => b.date === today && b.status === 'completed'));
+        setJobs(
+          snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(b => b.date === today && b.status === 'completed')
+        );
+
+        // Start countdown if unpaid and deadline exists
+        if (payment?.status === 'unpaid' && payment?.paymentDeadline) {
+          const deadlineMs = new Date(payment.paymentDeadline).getTime();
+          const nowMs      = Date.now();
+          const secsLeft   = Math.max(0, Math.floor((deadlineMs - nowMs) / 1000));
+          setCountdown(secsLeft);
+        } else {
+          setCountdown(null);
+        }
       } catch (e) {
         console.warn('DailySummary:', e.message);
       } finally {
@@ -48,10 +68,23 @@ export default function DailySummary({ navigation }) {
     return () => { alive = false; };
   }, [uid, today]));
 
+  // Live countdown ticker
+  useEffect(() => {
+    if (countdown === null) return;
+    timerRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) { clearInterval(timerRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [countdown]);
+
   if (loading) return <Loader />;
 
-  const totalComm  = summary?.totalCommission || 0;
-  const isPaid     = summary?.status === 'paid';
+  const totalComm = summary?.totalCommission || 0;
+  const isPaid    = summary?.status === 'paid';
+  const isUrgent  = countdown !== null && countdown < 3600; // < 1 hour
 
   return (
     <SafeAreaView style={s.safe}>
@@ -60,11 +93,26 @@ export default function DailySummary({ navigation }) {
         {/* ── Header ── */}
         <LinearGradient colors={['#145A3E', '#1C7C54']} style={s.header}>
           <Text style={s.headerIcon}>📊</Text>
-          <Text style={s.headerTitle}>Today's Summary</Text>
+          <Text style={s.headerTitle}>24-Hour Summary</Text>
           <View style={s.datePill}>
             <Text style={s.dateTxt}>📅 {today}</Text>
           </View>
         </LinearGradient>
+
+        {/* ── 24hr Countdown Timer (unpaid only) ── */}
+        {!isPaid && countdown !== null && (
+          <View style={[s.timerBox, isUrgent && s.timerBoxUrgent]}>
+            <Text style={[s.timerLabel, isUrgent && s.timerLabelUrgent]}>
+              {countdown === 0 ? '⛔ Payment Deadline Passed!' : '⏱️ Time Remaining to Pay Commission'}
+            </Text>
+            <Text style={[s.timerCount, isUrgent && s.timerCountUrgent]}>
+              {fmtCountdown(countdown)}
+            </Text>
+            {countdown > 0 && (
+              <Text style={s.timerSub}>Pay before deadline to keep your account active</Text>
+            )}
+          </View>
+        )}
 
         {/* ── Earnings card ── */}
         <View style={s.section}>
@@ -78,14 +126,13 @@ export default function DailySummary({ navigation }) {
         {/* ── Completed jobs ── */}
         <View style={s.section}>
           <View style={s.sectionRow}>
-            <Text style={s.sectionTitle}>
-              ✅ Completed Jobs
-            </Text>
+            <Text style={s.sectionTitle}>Completed Jobs</Text>
             <View style={[s.countBadge, { backgroundColor: jobs.length > 0 ? COLORS.primaryXLight : '#F3F4F6' }]}>
-              <Text style={[s.countTxt, { color: jobs.length > 0 ? COLORS.primary : COLORS.textSecondary }]}>{jobs.length}</Text>
+              <Text style={[s.countTxt, { color: jobs.length > 0 ? COLORS.primary : COLORS.textSecondary }]}>
+                {jobs.length}
+              </Text>
             </View>
           </View>
-
           {jobs.length > 0
             ? jobs.map((j, i) => (
                 <SummaryCard
@@ -99,7 +146,7 @@ export default function DailySummary({ navigation }) {
               ))
             : (
               <View style={s.emptyBox}>
-                <Text style={s.emptyTxt}>No completed jobs today yet</Text>
+                <Text style={s.emptyTxt}>No completed jobs yet</Text>
               </View>
             )
           }
@@ -108,13 +155,16 @@ export default function DailySummary({ navigation }) {
         {/* ── Pay CTA ── */}
         {totalComm > 0 && !isPaid && (
           <View style={s.section}>
-            <View style={s.warnBox}>
-              <Text style={s.warnTxt}>⚠️ Pay commission before midnight to keep your account unlocked.</Text>
+            <View style={[s.warnBox, isUrgent && s.warnBoxUrgent]}>
+              <Text style={[s.warnTxt, isUrgent && s.warnTxtUrgent]}>
+                {isUrgent
+                  ? '🚨 Less than 1 hour left! Pay commission immediately to avoid account suspension.'
+                  : '⚠️ Commission due — your account is locked until payment is complete.'}
+              </Text>
             </View>
             <Button
-              title={`💳 Pay ₹${totalComm} Now`}
+              title={`Pay Rs.${totalComm} Commission Now`}
               onPress={() => navigation.navigate('Payment', { summary })}
-              variant="secondary"
               style={{ marginTop: 12 }}
             />
           </View>
@@ -123,7 +173,7 @@ export default function DailySummary({ navigation }) {
         {isPaid && (
           <View style={s.section}>
             <View style={s.paidBox}>
-              <Text style={s.paidTxt}>🎉 Commission paid — account is unlocked!</Text>
+              <Text style={s.paidTxt}>Commission paid — account is unlocked!</Text>
             </View>
           </View>
         )}
@@ -135,26 +185,35 @@ export default function DailySummary({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  safe:       { flex: 1, backgroundColor: COLORS.background },
-  scroll:     { paddingBottom: 32 },
+  safe:           { flex: 1, backgroundColor: COLORS.background },
+  scroll:         { paddingBottom: 32 },
+  header:         { paddingTop: 36, paddingBottom: 28, paddingHorizontal: 24, alignItems: 'center' },
+  headerIcon:     { fontSize: 44, marginBottom: 10 },
+  headerTitle:    { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 10 },
+  datePill:       { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
+  dateTxt:        { fontSize: 13, fontWeight: '600', color: '#fff' },
 
-  header:     { paddingTop: 36, paddingBottom: 28, paddingHorizontal: 24, alignItems: 'center' },
-  headerIcon: { fontSize: 44, marginBottom: 10 },
-  headerTitle:{ fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 10 },
-  datePill:   { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
-  dateTxt:    { fontSize: 13, fontWeight: '600', color: '#fff' },
+  timerBox:       { margin: 16, backgroundColor: '#FFF3CD', borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 2, borderColor: '#F59E0B' },
+  timerBoxUrgent: { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
+  timerLabel:     { fontSize: 13, fontWeight: '700', color: '#92400E', marginBottom: 10 },
+  timerLabelUrgent:{ color: '#B91C1C' },
+  timerCount:     { fontSize: 44, fontWeight: '900', color: '#92400E', letterSpacing: 4, fontVariant: ['tabular-nums'] },
+  timerCountUrgent:{ color: '#B91C1C' },
+  timerSub:       { fontSize: 12, color: '#92400E', marginTop: 8, textAlign: 'center' },
 
-  section:    { paddingHorizontal: 16, marginTop: 20 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  sectionTitle:{ fontSize: 16, fontWeight: '800', color: COLORS.textPrimary, flex: 1 },
-  countBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  countTxt:   { fontSize: 13, fontWeight: '800' },
+  section:        { paddingHorizontal: 16, marginTop: 20 },
+  sectionRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  sectionTitle:   { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary, flex: 1 },
+  countBadge:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  countTxt:       { fontSize: 13, fontWeight: '800' },
+  emptyBox:       { backgroundColor: '#fff', borderRadius: 12, padding: 20, alignItems: 'center', elevation: 1 },
+  emptyTxt:       { fontSize: 13, color: COLORS.textSecondary },
 
-  emptyBox:   { backgroundColor: '#fff', borderRadius: 12, padding: 20, alignItems: 'center', elevation: 1 },
-  emptyTxt:   { fontSize: 13, color: COLORS.textSecondary },
+  warnBox:        { backgroundColor: '#FFF3CD', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: COLORS.warning },
+  warnBoxUrgent:  { backgroundColor: '#FEE2E2', borderLeftColor: COLORS.error },
+  warnTxt:        { fontSize: 13, color: '#856404', lineHeight: 20 },
+  warnTxtUrgent:  { color: '#B91C1C' },
 
-  warnBox:    { backgroundColor: '#FFF3CD', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: COLORS.warning },
-  warnTxt:    { fontSize: 13, color: '#856404', lineHeight: 20 },
-  paidBox:    { backgroundColor: '#D4EDDA', borderRadius: 12, padding: 16, alignItems: 'center' },
-  paidTxt:    { fontSize: 14, fontWeight: '700', color: '#155724' },
+  paidBox:        { backgroundColor: '#D4EDDA', borderRadius: 12, padding: 16, alignItems: 'center' },
+  paidTxt:        { fontSize: 14, fontWeight: '700', color: '#155724' },
 });

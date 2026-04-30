@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createBooking, getUser, getFarmerDailyHectares, getMachineDailyHectares } from '../../../firebase/firestore';
+import { createBooking, getUser } from '../../../firebase/firestore';
 import { useUser }                   from '../../../context/UserContext';
 import { generateOTP }               from '../../../utils/generateOTP';
 import { todayString }               from '../../../utils/dateFormatter';
@@ -14,8 +14,6 @@ import { COLORS }                    from '../../../constants/colors';
 import { CONFIG }                    from '../../../constants/config';
 import Input                         from '../../common/components/Input';
 import Button                        from '../../common/components/Button';
-
-const MAX = CONFIG.MAX_HECTARES_PER_DAY; // 5
 
 export default function BookingScreen({ navigation, route }) {
   const { machine }     = route.params;
@@ -46,49 +44,8 @@ export default function BookingScreen({ navigation, route }) {
 
     const requested = parseFloat(hectare);
 
-    // ── Check farmer's daily limit ─────────────────────────────────────────
     setLoading(true);
     try {
-      const farmerUsed = await getFarmerDailyHectares(uid, date);
-      const farmerRemaining = MAX - farmerUsed;
-      if (farmerRemaining <= 0) {
-        Alert.alert(
-          '🚫 Daily Limit Reached',
-          `You have already booked ${farmerUsed} ha today.\nMaximum allowed is ${MAX} ha per day.`,
-        );
-        setLoading(false);
-        return;
-      }
-      if (requested > farmerRemaining) {
-        Alert.alert(
-          '🌾 Limit Exceeded',
-          `You can only book ${farmerRemaining} more ha today (daily max: ${MAX} ha).\nYou have already booked ${farmerUsed} ha.`,
-        );
-        setLoading(false);
-        return;
-      }
-
-      // ── Check machine's daily limit ──────────────────────────────────────
-      const machineUsed = await getMachineDailyHectares(machine.id, date);
-      const machineRemaining = MAX - machineUsed;
-      if (machineRemaining <= 0) {
-        Alert.alert(
-          '🚜 Machine Fully Booked',
-          `This machine has already reached its ${MAX} ha daily limit.\nPlease choose another machine or a different date.`,
-        );
-        setLoading(false);
-        return;
-      }
-      if (requested > machineRemaining) {
-        Alert.alert(
-          '🚜 Machine Limit',
-          `This machine can only handle ${machineRemaining} more ha today (${machineUsed} ha already booked).\nPlease reduce your hectare request.`,
-        );
-        setLoading(false);
-        return;
-      }
-
-      // ── All good — create booking ────────────────────────────────────────
       const otp = generateOTP();
       let ownerPhone = machine.ownerPhone || '';
       let ownerName  = machine.ownerName  || '';
@@ -98,12 +55,24 @@ export default function BookingScreen({ navigation, route }) {
         ownerName   = info?.name  || ownerName;
       }
       await createBooking({
-        farmerId: uid, farmerName: userProfile?.name || '', farmerPhone: userProfile?.phone || '',
-        ownerId: machine.ownerId, ownerName, ownerPhone,
-        machineId: machine.id, machineType: machine.type, machineTypeLabel: getCategoryLabel(machine.type),
-        pricePerHour: machine.price_per_hour,
-        date, timeSlot: slot, hectareRequested: requested,
-        hectareCompleted: 0, commission: 0, status: 'pending', otp, taluk: machine.taluk,
+        farmerId:         uid,
+        farmerName:       userProfile?.name  || '',
+        farmerPhone:      userProfile?.phone || '',
+        ownerId:          machine.ownerId,
+        ownerName,
+        ownerPhone,
+        machineId:        machine.id,
+        machineType:      machine.type,
+        machineTypeLabel: getCategoryLabel(machine.type),
+        pricePerHour:     machine.price_per_hour,
+        date,
+        timeSlot:         slot,
+        hectareRequested: requested,
+        hectareCompleted: 0,
+        commission:       0,
+        status:           'pending',
+        otp,
+        taluk:            machine.taluk,
       });
       navigation.replace('BookingConfirm', {
         otp, machine: { ...machine, ownerPhone, ownerName }, date, slot, hectare,
@@ -122,8 +91,11 @@ export default function BookingScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={s.safe}>
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* ── Machine Banner ── */}
         <LinearGradient colors={['#145A3E', '#1C7C54']} style={s.banner}>
           <Text style={s.bannerIcon}>{machineIcon}</Text>
@@ -133,15 +105,15 @@ export default function BookingScreen({ navigation, route }) {
           </View>
         </LinearGradient>
 
-        {/* ── Daily limit info banner ── */}
-        <View style={s.limitBanner}>
-          <Text style={s.limitTxt}>🌾 Max {MAX} hectares bookable per day (farmer &amp; machine)</Text>
-        </View>
-
         <View style={s.form}>
 
           {/* Date */}
-          <Input label="📅 Date *" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+          <Input
+            label="📅 Date *"
+            value={date}
+            onChangeText={setDate}
+            placeholder="YYYY-MM-DD"
+          />
 
           {/* Time Slot */}
           <Text style={s.fieldLabel}>⏰ Time Slot *</Text>
@@ -158,12 +130,12 @@ export default function BookingScreen({ navigation, route }) {
             ))}
           </View>
 
-          {/* Hectare */}
+          {/* Hectare — no limit label */}
           <Input
-            label={`🌾 Hectares Required * (max ${MAX} ha/day)`}
+            label="🌾 Hectares Required *"
             value={hectare}
             onChangeText={setHectare}
-            placeholder={`e.g. 2.5  (limit: ${MAX} ha)`}
+            placeholder="e.g. 2.5"
             keyboardType="decimal-pad"
           />
 
@@ -192,7 +164,12 @@ export default function BookingScreen({ navigation, route }) {
             <Text style={s.infoTxt}>🔐 You'll receive an OTP after the owner accepts your request.</Text>
           </View>
 
-          <Button title="📅 Send Booking Request" onPress={handleBook} loading={loading} style={{ marginTop: 4 }} />
+          <Button
+            title="📅 Send Booking Request"
+            onPress={handleBook}
+            loading={loading}
+            style={{ marginTop: 4 }}
+          />
 
         </View>
       </ScrollView>
@@ -210,12 +187,6 @@ const s = StyleSheet.create({
   bannerIcon:    { fontSize: 40, marginRight: 14 },
   bannerTitle:   { fontSize: 20, fontWeight: '900', color: '#fff' },
   bannerSub:     { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
-
-  limitBanner:   {
-    backgroundColor: '#FFF9E6', borderLeftWidth: 4, borderLeftColor: '#F59E0B',
-    paddingHorizontal: 16, paddingVertical: 10,
-  },
-  limitTxt:      { fontSize: 13, color: '#92400E', fontWeight: '600' },
 
   form:          { paddingHorizontal: 16, paddingTop: 20 },
   fieldLabel:    { fontSize: 13, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 10 },

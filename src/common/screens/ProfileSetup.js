@@ -5,11 +5,19 @@ import {
   StatusBar, ActivityIndicator, TextInput,
 } from 'react-native';
 import { LinearGradient }    from 'expo-linear-gradient';
+import { CommonActions }     from '@react-navigation/native';
 import { createUser }        from '../../../firebase/firestore';
 import { useAuth }           from '../../../context/AuthContext';
 import { useUser }           from '../../../context/UserContext';
 import { COLORS }            from '../../../constants/colors';
 import DistrictTalukPicker   from '../components/DistrictTalukPicker';
+
+// Role → first screen registered in AppNavigator
+const ROLE_HOME = {
+  farmer: 'FarmerHome',
+  owner:  'OwnerDashboard', // always registered in AppNavigator
+  admin:  'AdminDashboard',
+};
 
 export default function ProfileSetup({ navigation, route }) {
   const uid   = route?.params?.uid   || '';
@@ -26,6 +34,13 @@ export default function ProfileSetup({ navigation, route }) {
   const [village,  setVillage]  = useState('');
   const [loading,  setLoading]  = useState(false);
 
+  const goHome = () => {
+    const screen = ROLE_HOME[role] || 'RoleSelect';
+    navigation.dispatch(
+      CommonActions.reset({ index: 0, routes: [{ name: screen }] })
+    );
+  };
+
   if (!uid) {
     return (
       <SafeAreaView style={[s.safe, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -35,7 +50,11 @@ export default function ProfileSetup({ navigation, route }) {
         </Text>
         <TouchableOpacity
           style={[s.btn, { marginTop: 24 }]}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] })}
+          onPress={() =>
+            navigation.dispatch(
+              CommonActions.reset({ index: 0, routes: [{ name: 'RoleSelect' }] })
+            )
+          }
         >
           <Text style={s.btnTxt}>Start Over</Text>
         </TouchableOpacity>
@@ -62,14 +81,9 @@ export default function ProfileSetup({ navigation, route }) {
       };
       await createUser(uid, profile);
       const fullProfile = { ...profile, id: uid };
-      // Set in BOTH contexts so the app instantly knows the role
       setAuthProfile(fullProfile);
       setUserProfile(fullProfile);
-      const home =
-        role === 'owner' ? 'OwnerDashboard' :
-        role === 'admin' ? 'AdminDashboard' :
-        'FarmerHome';
-      navigation.reset({ index: 0, routes: [{ name: home }] });
+      goHome();
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not save profile. Try again.');
       setLoading(false);
@@ -109,7 +123,6 @@ export default function ProfileSetup({ navigation, route }) {
         >
           <View style={s.handle} />
 
-          {/* Full Name */}
           <View style={s.fieldGroup}>
             <View style={s.labelRow}>
               <Text style={s.labelIcon}>👤</Text>
@@ -134,7 +147,6 @@ export default function ProfileSetup({ navigation, route }) {
             onTalukChange={setTaluk}
           />
 
-          {/* Village */}
           <View style={s.fieldGroup}>
             <View style={s.labelRow}>
               <Text style={s.labelIcon}>🏘️</Text>

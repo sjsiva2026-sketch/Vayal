@@ -1,15 +1,19 @@
 // navigation/AppNavigator.js
-import React, { useState, useEffect } from 'react';
-import { View, Text, Image, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View, Text, Image, ActivityIndicator,
+  TouchableOpacity, StyleSheet,
+} from 'react-native';
 import { NavigationContainer }        from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LinearGradient }             from 'expo-linear-gradient';
 
-import { useAuth } from '../context/AuthContext';
-import { useUser } from '../context/UserContext';
-import { COLORS }  from '../constants/colors';
-import { ROLES }   from '../constants/roles';
-import { ICONS }   from '../assets/index';
+import { useAuth }    from '../context/AuthContext';
+import { useUser }    from '../context/UserContext';
+import { updateUser } from '../firebase/firestore';
+import { COLORS }     from '../constants/colors';
+import { ROLES }      from '../constants/roles';
+import { ICONS }      from '../assets/index';
 
 // Auth
 import RoleSelect   from '../src/common/screens/RoleSelect';
@@ -59,6 +63,7 @@ const HEADER = {
   headerTitleStyle: { fontWeight: '800', fontSize: 17 },
 };
 
+// ── Splash ────────────────────────────────────────────────────────────────────
 function Splash() {
   return (
     <LinearGradient
@@ -67,32 +72,76 @@ function Splash() {
     >
       <View style={{
         width: 110, height: 110, borderRadius: 28, overflow: 'hidden',
-        borderWidth: 3, borderColor: 'rgba(255,255,255,0.25)',
-        marginBottom: 24, elevation: 10,
-        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderWidth: 3, borderColor: 'rgba(255,255,255,0.25)', marginBottom: 24,
+        elevation: 10, backgroundColor: 'rgba(255,255,255,0.15)',
         alignItems: 'center', justifyContent: 'center',
       }}>
         {ICONS.logo
           ? <Image source={ICONS.logo} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          : <Text style={{ fontSize: 56 }}>🌾</Text>
-        }
+          : <Text style={{ fontSize: 56 }}>🌾</Text>}
       </View>
-      <Text style={{ fontSize: 44, fontWeight: '900', color: '#fff', letterSpacing: 10, marginBottom: 4 }}>
-        VAYAL
+      <Text style={{ fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: 4, marginBottom: 4 }}>
+        Namma Vayal
       </Text>
-      <Text style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', letterSpacing: 3, marginBottom: 48 }}>
-        வாயல்
+      <Text style={{ fontSize: 16, color: 'rgba(255,255,255,0.65)', letterSpacing: 3, marginBottom: 48 }}>
+        நம்ம வாயல்
       </Text>
       <ActivityIndicator size="large" color="rgba(255,255,255,0.85)" />
     </LinearGradient>
   );
 }
 
+// ── LockWall ──────────────────────────────────────────────────────────────────
+function LockWallScreen({ navigation }) {
+  return (
+    <LinearGradient colors={['#7F1D1D', '#B91C1C', '#EF4444']} style={ls.safe}>
+      <View style={ls.iconBox}><Text style={{ fontSize: 52 }}>🔒</Text></View>
+      <Text style={ls.appName}>Namma Vayal</Text>
+      <Text style={ls.title}>Account Locked</Text>
+      <Text style={ls.sub}>
+        Your 24-hour commission window has passed.{'\n'}
+        Pay commission to unlock all features.
+      </Text>
+      <View style={ls.infoCard}>
+        <Text style={ls.infoTitle}>Pay to unlock:</Text>
+        {[
+          '✅ Accept new booking requests',
+          '✅ Start & complete work',
+          '✅ Manage your machines',
+          '✅ All dashboard features',
+        ].map(t => <Text key={t} style={ls.infoItem}>{t}</Text>)}
+      </View>
+      <TouchableOpacity
+        style={ls.payBtn}
+        onPress={() => navigation.navigate('PayCommission')}
+        activeOpacity={0.88}
+      >
+        <Text style={ls.payBtnTxt}>💰 Pay Commission Now</Text>
+      </TouchableOpacity>
+    </LinearGradient>
+  );
+}
+
+const ls = StyleSheet.create({
+  safe:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  iconBox:   { width: 96, height: 96, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  appName:   { fontSize: 14, color: 'rgba(255,255,255,0.6)', letterSpacing: 2, marginBottom: 8 },
+  title:     { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 10, textAlign: 'center' },
+  sub:       { fontSize: 14, color: 'rgba(255,255,255,0.85)', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  infoCard:  { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 18, padding: 20, width: '100%', marginBottom: 28 },
+  infoTitle: { fontSize: 14, fontWeight: '800', color: '#fff', marginBottom: 12 },
+  infoItem:  { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginBottom: 8, lineHeight: 20 },
+  payBtn:    { backgroundColor: '#fff', borderRadius: 16, paddingVertical: 18, width: '100%', alignItems: 'center', elevation: 4 },
+  payBtnTxt: { color: '#B91C1C', fontSize: 17, fontWeight: '900' },
+});
+
+// ── AppNavigator ──────────────────────────────────────────────────────────────
 export default function AppNavigator() {
   const { user, loading: authLoading, userProfile: authProfile } = useAuth();
-  const { userProfile: ctxProfile, setUserProfile }              = useUser();
-
+  const { userProfile: ctxProfile, setUserProfile, updateProfile } = useUser();
   const [ready, setReady] = useState(false);
+  const lockTimerRef      = useRef(null);
+
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 8000);
     return () => clearTimeout(t);
@@ -102,14 +151,44 @@ export default function AppNavigator() {
     if (authProfile && !ctxProfile) setUserProfile(authProfile);
   }, [authProfile, ctxProfile, setUserProfile]);
 
+  const profile = ctxProfile || authProfile;
+
+  // 24-hour auto-lock timer
+  useEffect(() => {
+    clearTimeout(lockTimerRef.current);
+    if (profile?.role !== ROLES.OWNER) return;
+    if (profile?.isLocked === true)    return;
+    const deadline = profile?.paymentDeadline;
+    if (!deadline)                     return;
+
+    const uid    = profile?.id;
+    const msLeft = new Date(deadline).getTime() - Date.now();
+
+    const doLock = async () => {
+      try {
+        await updateUser(uid, { isLocked: true });
+        updateProfile({ isLocked: true });
+      } catch (e) {
+        lockTimerRef.current = setTimeout(doLock, 30_000);
+      }
+    };
+
+    if (msLeft <= 0) doLock();
+    else lockTimerRef.current = setTimeout(doLock, msLeft);
+
+    return () => clearTimeout(lockTimerRef.current);
+  }, [profile?.role, profile?.isLocked, profile?.paymentDeadline, profile?.id]);
+
   if (authLoading && !ready) return <Splash />;
 
-  const profile = ctxProfile || authProfile;
+  const role     = profile?.role;
+  const isLocked = profile?.isLocked === true;
+
   let initialRoute = 'RoleSelect';
-  if (user?.uid && profile?.role) {
-    if      (profile.role === ROLES.FARMER) initialRoute = 'FarmerHome';
-    else if (profile.role === ROLES.OWNER)  initialRoute = 'OwnerDashboard';
-    else if (profile.role === ROLES.ADMIN)  initialRoute = 'AdminDashboard';
+  if (user?.uid && role) {
+    if      (role === ROLES.FARMER) initialRoute = 'FarmerHome';
+    else if (role === ROLES.OWNER)  initialRoute = isLocked ? 'LockWall' : 'OwnerDashboard';
+    else if (role === ROLES.ADMIN)  initialRoute = 'AdminDashboard';
   }
 
   return (
@@ -134,7 +213,12 @@ export default function AppNavigator() {
         <Stack.Screen name="FarmerProfile"  component={FarmerProfile}   options={{ title: 'My Profile' }} />
         <Stack.Screen name="RatingScreen"   component={RatingScreen}    options={{ title: 'Rate Experience' }} />
 
-        {/* Owner */}
+        {/* Lock Wall — always registered */}
+        <Stack.Screen name="LockWall"     component={LockWallScreen} options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="PayCommission" component={PaymentScreen}
+          options={{ title: 'Namma Vayal — Pay Commission', headerStyle: { backgroundColor: '#B91C1C' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800' }, gestureEnabled: false }} />
+
+        {/* Owner — always registered */}
         <Stack.Screen name="OwnerDashboard"   component={OwnerDashboard}   options={{ headerShown: false }} />
         <Stack.Screen name="AddMachine"       component={AddMachine}       options={{ title: 'Add Machine' }} />
         <Stack.Screen name="EditMachine"      component={EditMachine}      options={{ title: 'Edit Machine' }} />

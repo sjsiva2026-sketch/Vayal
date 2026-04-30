@@ -24,8 +24,8 @@ export default function RoleSelect({ navigation }) {
             : <Text style={s.logoEmoji}>🌾</Text>
           }
         </View>
-        <Text style={s.appName}>VAYAL</Text>
-        <Text style={s.appTamil}>வாயல்</Text>
+        <Text style={s.appName}>Namma Vayal</Text>
+        <Text style={s.appTamil}>நம்ம வயல்</Text>
         <View style={s.taglineWrap}>
           <Text style={s.tagline}>Farmer · Machine Connect</Text>
         </View>
@@ -35,7 +35,7 @@ export default function RoleSelect({ navigation }) {
       <View style={s.sheet}>
         <View style={s.sheetHandle} />
         <Text style={s.sheetTitle}>Select Your Role</Text>
-        <Text style={s.sheetSub}>Choose how you want to use Vayal</Text>
+        <Text style={s.sheetSub}>Choose how you want to use Namma Vayal</Text>
 
         {/* Farmer card */}
         <TouchableOpacity
@@ -107,7 +107,7 @@ const s = StyleSheet.create({
   logoWrap:       { width: 88, height: 88, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 16, elevation: 10, overflow: 'hidden' },
   logoImg:        { width: '100%', height: '100%' },
   logoEmoji:      { fontSize: 44 },
-  appName:        { fontSize: 48, fontWeight: '900', color: '#fff', letterSpacing: 10, marginBottom: 2 },
+  appName:        { fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: 2 },
   appTamil:       { fontSize: 18, color: 'rgba(255,255,255,0.7)', letterSpacing: 4, marginBottom: 14 },
   taglineWrap:    { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 6, marginBottom: 8 },
   tagline:        { fontSize: 13, color: 'rgba(255,255,255,0.95)', fontWeight: '600' },
