@@ -6,7 +6,7 @@
 
 ## 📱 What is Vayal?
 
-Vayal (வாயல்) solves a real rural problem: farmers need to rent farm machines (harvesters, tillers, cultivators) but finding available machines nearby is difficult. Machine owners want more bookings but have no platform.
+Vayal (வயல்) solves a real rural problem: farmers need to rent farm machines (harvesters, tillers, cultivators) but finding available machines nearby is difficult. Machine owners want more bookings but have no platform.
 
 **Vayal connects them directly** with phone-based trust, OTP verification, and automated commission billing.
 
