@@ -1,46 +1,38 @@
+// constants/colors.js — design system matching screenshots
 export const COLORS = {
-  // Brand
-  primary:       '#1C7C54',
-  primaryDark:   '#145A3E',
-  primaryLight:  '#2E9E6B',
-  primaryXLight: '#ECFDF5',
+  // Primary green (matching screenshot active tab, buttons, accents)
+  primary:        '#1C7C54',
+  primaryDark:    '#145A3E',
+  primaryLight:   '#E8F5EE',
+  primaryXLight:  '#F0FDF7',
 
-  // Secondary / Accent
-  secondary:     '#F4B400',
-  secondaryDark: '#D97706',
-  secondaryLight:'#FFF3CD',
+  // Secondary / accent
+  secondary:      '#F59E0B',
+  secondaryLight: '#FFF3CD',
 
-  // Background
-  background:    '#F4F6F8',
-  surface:       '#FFFFFF',
-  surfaceAlt:    '#F9FAFB',
+  // UI surfaces
+  background:     '#F4F5F7',
+  white:          '#FFFFFF',
+  card:           '#FFFFFF',
 
   // Text
-  textPrimary:   '#111827',
-  textSecondary: '#6B7280',
-  textTertiary:  '#9CA3AF',
-  textInverse:   '#FFFFFF',
-
-  // Status
-  success:       '#22C55E',
-  successLight:  '#DCFCE7',
-  error:         '#EF4444',
-  errorLight:    '#FEE2E2',
-  warning:       '#F59E0B',
-  warningLight:  '#FEF9C3',
-  info:          '#3B82F6',
-  infoLight:     '#DBEAFE',
+  textPrimary:    '#111827',
+  textSecondary:  '#6B7280',
+  textTertiary:   '#9CA3AF',
 
   // Borders
-  border:        '#E5E7EB',
-  borderLight:   '#F3F4F6',
+  border:         '#F0F0F0',
+  borderLight:    '#F9FAFB',
 
-  // Misc
-  white:         '#FFFFFF',
-  black:         '#000000',
-  overlay:       'rgba(0,0,0,0.45)',
+  // Semantic
+  success:        '#22C55E',
+  warning:        '#F59E0B',
+  error:          '#EF4444',
+  info:           '#3B82F6',
 
-  // Gradient shortcuts
-  gradientStart: '#145A3E',
-  gradientEnd:   '#2E9E6B',
+  // Status backgrounds
+  successBg:      '#ECFDF5',
+  warningBg:      '#FFFBEB',
+  errorBg:        '#FEF2F2',
+  infoBg:         '#EFF6FF',
 };

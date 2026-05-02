@@ -7,6 +7,7 @@ import {
 import { NavigationContainer }        from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LinearGradient }             from 'expo-linear-gradient';
+import { Feather }                    from '@expo/vector-icons';
 
 import { useAuth }    from '../context/AuthContext';
 import { useUser }    from '../context/UserContext';
@@ -21,31 +22,25 @@ import LoginScreen  from '../src/common/screens/LoginScreen';
 import OTPScreen    from '../src/common/screens/OTPScreen';
 import ProfileSetup from '../src/common/screens/ProfileSetup';
 
-// Farmer
-import FarmerHome     from '../src/farmer/screens/FarmerHome';
+// ── Farmer — Bottom Tab Navigator
+import FarmerTabNavigator from '../src/farmer/navigation/FarmerTabNavigator';
 import LocationSelect from '../src/farmer/screens/LocationSelect';
-import CategoryScreen from '../src/farmer/screens/CategoryScreen';
 import MachineList    from '../src/farmer/screens/MachineList';
 import MachineDetails from '../src/farmer/screens/MachineDetails';
 import BookingScreen  from '../src/farmer/screens/BookingScreen';
 import BookingConfirm from '../src/farmer/screens/BookingConfirm';
-import BookingHistory from '../src/farmer/screens/BookingHistory';
-import FarmerProfile  from '../src/farmer/screens/FarmerProfile';
 import RatingScreen   from '../src/farmer/screens/RatingScreen';
 
-// Owner
-import OwnerDashboard   from '../src/owner/screens/OwnerDashboard';
-import AddMachine       from '../src/owner/screens/AddMachine';
-import EditMachine      from '../src/owner/screens/EditMachine';
-import MachineListOwner from '../src/owner/screens/MachineListOwner';
-import BookingRequests  from '../src/owner/screens/BookingRequests';
-import BookingDetails   from '../src/owner/screens/BookingDetails';
-import WorkStartOTP     from '../src/owner/screens/WorkStartOTP';
-import WorkInProgress   from '../src/owner/screens/WorkInProgress';
-import WorkComplete     from '../src/owner/screens/WorkComplete';
-import DailySummary     from '../src/owner/screens/DailySummary';
-import PaymentScreen    from '../src/owner/screens/PaymentScreen';
-import OwnerProfile     from '../src/owner/screens/OwnerProfile';
+// ── Owner — Bottom Tab Navigator
+import OwnerTabNavigator from '../src/owner/navigation/OwnerTabNavigator';
+import OwnerDashboard    from '../src/owner/screens/OwnerDashboard';
+import BookingDetails    from '../src/owner/screens/BookingDetails';
+import WorkStartOTP      from '../src/owner/screens/WorkStartOTP';
+import WorkInProgress    from '../src/owner/screens/WorkInProgress';
+import WorkComplete      from '../src/owner/screens/WorkComplete';
+import PaymentScreen     from '../src/owner/screens/PaymentScreen';
+import OwnerProfile      from '../src/owner/screens/OwnerProfile';
+import EditMachine       from '../src/owner/screens/EditMachine';
 
 // Admin
 import AdminDashboard   from '../src/admin/screens/AdminDashboard';
@@ -55,12 +50,14 @@ import PaymentsList     from '../src/admin/screens/PaymentsList';
 import Reports          from '../src/admin/screens/Reports';
 import AdminAppAccount  from '../src/admin/screens/AdminAppAccount';
 
-const Stack = createNativeStackNavigator();
+const Stack   = createNativeStackNavigator();
+const PRIMARY = '#1C7C54';
 
 const HEADER = {
-  headerStyle:      { backgroundColor: COLORS.primaryDark },
-  headerTintColor:  '#fff',
-  headerTitleStyle: { fontWeight: '800', fontSize: 17 },
+  headerStyle:      { backgroundColor: '#fff', elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerTintColor:  '#111827',
+  headerTitleStyle: { fontWeight: '800', fontSize: 18, color: '#111827' },
+  headerBackTitleVisible: false,
 };
 
 // ── Splash ────────────────────────────────────────────────────────────────────
@@ -95,7 +92,9 @@ function Splash() {
 function LockWallScreen({ navigation }) {
   return (
     <LinearGradient colors={['#7F1D1D', '#B91C1C', '#EF4444']} style={ls.safe}>
-      <View style={ls.iconBox}><Text style={{ fontSize: 52 }}>🔒</Text></View>
+      <View style={ls.iconBox}>
+        <Feather name="lock" size={48} color="#fff" />
+      </View>
       <Text style={ls.appName}>Namma Vayal</Text>
       <Text style={ls.title}>Account Locked</Text>
       <Text style={ls.sub}>
@@ -105,18 +104,24 @@ function LockWallScreen({ navigation }) {
       <View style={ls.infoCard}>
         <Text style={ls.infoTitle}>Pay to unlock:</Text>
         {[
-          '✅ Accept new booking requests',
-          '✅ Start & complete work',
-          '✅ Manage your machines',
-          '✅ All dashboard features',
-        ].map(t => <Text key={t} style={ls.infoItem}>{t}</Text>)}
+          'Accept new booking requests',
+          'Start & complete work',
+          'Manage your machines',
+          'All dashboard features',
+        ].map(t => (
+          <View key={t} style={ls.infoRow}>
+            <Feather name="check-circle" size={14} color="#6EE7B7" style={{ marginRight: 8 }} />
+            <Text style={ls.infoItem}>{t}</Text>
+          </View>
+        ))}
       </View>
       <TouchableOpacity
         style={ls.payBtn}
         onPress={() => navigation.navigate('PayCommission')}
         activeOpacity={0.88}
       >
-        <Text style={ls.payBtnTxt}>💰 Pay Commission Now</Text>
+        <Feather name="credit-card" size={18} color="#B91C1C" style={{ marginRight: 8 }} />
+        <Text style={ls.payBtnTxt}>Pay Commission Now</Text>
       </TouchableOpacity>
     </LinearGradient>
   );
@@ -130,8 +135,9 @@ const ls = StyleSheet.create({
   sub:       { fontSize: 14, color: 'rgba(255,255,255,0.85)', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
   infoCard:  { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 18, padding: 20, width: '100%', marginBottom: 28 },
   infoTitle: { fontSize: 14, fontWeight: '800', color: '#fff', marginBottom: 12 },
-  infoItem:  { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginBottom: 8, lineHeight: 20 },
-  payBtn:    { backgroundColor: '#fff', borderRadius: 16, paddingVertical: 18, width: '100%', alignItems: 'center', elevation: 4 },
+  infoRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  infoItem:  { fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 20 },
+  payBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 18, width: '100%', elevation: 4 },
   payBtnTxt: { color: '#B91C1C', fontSize: 17, fontWeight: '900' },
 });
 
@@ -153,29 +159,23 @@ export default function AppNavigator() {
 
   const profile = ctxProfile || authProfile;
 
-  // 24-hour auto-lock timer
+  // 24-hour auto-lock
   useEffect(() => {
     clearTimeout(lockTimerRef.current);
     if (profile?.role !== ROLES.OWNER) return;
     if (profile?.isLocked === true)    return;
     const deadline = profile?.paymentDeadline;
-    if (!deadline)                     return;
-
+    if (!deadline) return;
     const uid    = profile?.id;
     const msLeft = new Date(deadline).getTime() - Date.now();
-
     const doLock = async () => {
       try {
         await updateUser(uid, { isLocked: true });
         updateProfile({ isLocked: true });
-      } catch (e) {
-        lockTimerRef.current = setTimeout(doLock, 30_000);
-      }
+      } catch { lockTimerRef.current = setTimeout(doLock, 30_000); }
     };
-
     if (msLeft <= 0) doLock();
     else lockTimerRef.current = setTimeout(doLock, msLeft);
-
     return () => clearTimeout(lockTimerRef.current);
   }, [profile?.role, profile?.isLocked, profile?.paymentDeadline, profile?.id]);
 
@@ -187,7 +187,7 @@ export default function AppNavigator() {
   let initialRoute = 'RoleSelect';
   if (user?.uid && role) {
     if      (role === ROLES.FARMER) initialRoute = 'FarmerHome';
-    else if (role === ROLES.OWNER)  initialRoute = isLocked ? 'LockWall' : 'OwnerDashboard';
+    else if (role === ROLES.OWNER)  initialRoute = isLocked ? 'LockWall' : 'OwnerHome';
     else if (role === ROLES.ADMIN)  initialRoute = 'AdminDashboard';
   }
 
@@ -195,50 +195,69 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={HEADER}>
 
-        {/* Auth */}
+        {/* ── Auth ── */}
         <Stack.Screen name="RoleSelect"   component={RoleSelect}   options={{ headerShown: false }} />
         <Stack.Screen name="Login"        component={LoginScreen}  options={{ headerShown: false }} />
         <Stack.Screen name="OTP"          component={OTPScreen}    options={{ headerShown: false }} />
         <Stack.Screen name="ProfileSetup" component={ProfileSetup} options={{ headerShown: false }} />
 
-        {/* Farmer */}
-        <Stack.Screen name="FarmerHome"     component={FarmerHome}     options={{ headerShown: false }} />
-        <Stack.Screen name="LocationSelect" component={LocationSelect}  options={{ title: 'Set Location' }} />
-        <Stack.Screen name="Category"       component={CategoryScreen}  options={{ title: 'Machine Type' }} />
-        <Stack.Screen name="MachineList"    component={MachineList}     options={{ title: 'Available Machines' }} />
-        <Stack.Screen name="MachineDetails" component={MachineDetails}  options={{ title: 'Machine Details' }} />
-        <Stack.Screen name="Booking"        component={BookingScreen}   options={{ title: 'Book Machine' }} />
-        <Stack.Screen name="BookingConfirm" component={BookingConfirm}  options={{ title: 'Booking Confirmed' }} />
-        <Stack.Screen name="BookingHistory" component={BookingHistory}  options={{ title: 'My Bookings' }} />
-        <Stack.Screen name="FarmerProfile"  component={FarmerProfile}   options={{ title: 'My Profile' }} />
-        <Stack.Screen name="RatingScreen"   component={RatingScreen}    options={{ title: 'Rate Experience' }} />
+        {/* ── Farmer — Tab Navigator ── */}
+        <Stack.Screen name="FarmerHome"     component={FarmerTabNavigator} options={{ headerShown: false }} />
+        <Stack.Screen name="LocationSelect" component={LocationSelect}     options={{ title: 'Set Location' }} />
+        <Stack.Screen name="MachineList"    component={MachineList}        options={{ title: 'Available Machines' }} />
+        <Stack.Screen name="MachineDetails" component={MachineDetails}     options={{ title: 'Machine Details' }} />
+        <Stack.Screen name="Booking"        component={BookingScreen}      options={{ title: 'Book Machine' }} />
+        <Stack.Screen name="BookingConfirm" component={BookingConfirm}     options={{ title: 'Booking Confirmed' }} />
+        <Stack.Screen name="RatingScreen"   component={RatingScreen}       options={{ title: 'Rate Experience' }} />
 
-        {/* Lock Wall — always registered */}
-        <Stack.Screen name="LockWall"     component={LockWallScreen} options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="PayCommission" component={PaymentScreen}
-          options={{ title: 'Namma Vayal — Pay Commission', headerStyle: { backgroundColor: '#B91C1C' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800' }, gestureEnabled: false }} />
+        {/* ── Lock Wall — always registered ── */}
+        <Stack.Screen
+          name="LockWall"
+          component={LockWallScreen}
+          options={{ headerShown: false, gestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="PayCommission"
+          component={PaymentScreen}
+          options={{
+            title: 'Pay Commission',
+            headerStyle: { backgroundColor: '#B91C1C' },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontWeight: '800' },
+            gestureEnabled: false,
+          }}
+        />
 
-        {/* Owner — always registered */}
-        <Stack.Screen name="OwnerDashboard"   component={OwnerDashboard}   options={{ headerShown: false }} />
-        <Stack.Screen name="AddMachine"       component={AddMachine}       options={{ title: 'Add Machine' }} />
-        <Stack.Screen name="EditMachine"      component={EditMachine}      options={{ title: 'Edit Machine' }} />
-        <Stack.Screen name="MachineListOwner" component={MachineListOwner} options={{ title: 'My Machines' }} />
-        <Stack.Screen name="BookingRequests"  component={BookingRequests}  options={{ title: 'Booking Requests' }} />
-        <Stack.Screen name="BookingDetails"   component={BookingDetails}   options={{ title: 'Booking Details' }} />
-        <Stack.Screen name="WorkStartOTP"     component={WorkStartOTP}     options={{ title: 'Start Work' }} />
-        <Stack.Screen name="WorkInProgress"   component={WorkInProgress}   options={{ title: 'Work In Progress' }} />
-        <Stack.Screen name="WorkComplete"     component={WorkComplete}     options={{ title: 'Complete Work' }} />
-        <Stack.Screen name="DailySummary"     component={DailySummary}     options={{ title: "Today's Summary" }} />
-        <Stack.Screen name="Payment"          component={PaymentScreen}    options={{ title: 'Pay Commission' }} />
-        <Stack.Screen name="OwnerProfile"     component={OwnerProfile}     options={{ title: 'My Profile' }} />
+        {/* ── Owner — Tab Navigator as home ── */}
+        <Stack.Screen
+          name="OwnerHome"
+          component={OwnerTabNavigator}
+          options={{ headerShown: false }}
+        />
 
-        {/* Admin */}
-        <Stack.Screen name="AdminDashboard"  component={AdminDashboard}  options={{ headerShown: false }} />
-        <Stack.Screen name="UsersList"       component={UsersList}       options={{ title: 'Users' }} />
-        <Stack.Screen name="MachinesList"    component={MachinesList}    options={{ title: 'Machines' }} />
-        <Stack.Screen name="PaymentsList"    component={PaymentsList}    options={{ title: 'Payments' }} />
-        <Stack.Screen name="Reports"         component={Reports}         options={{ title: 'Reports' }} />
-        <Stack.Screen name="AdminAppAccount" component={AdminAppAccount} options={{ title: 'App Bank Account' }} />
+        {/* ── Owner — legacy Dashboard (for navigate('OwnerDashboard') calls) ── */}
+        <Stack.Screen
+          name="OwnerDashboard"
+          component={OwnerDashboard}
+          options={{ headerShown: false }}
+        />
+
+        {/* ── Owner — stack screens pushed from tabs ── */}
+        <Stack.Screen name="BookingDetails"    component={BookingDetails}   options={{ title: 'Booking Details' }} />
+        <Stack.Screen name="WorkStartOTP"      component={WorkStartOTP}     options={{ title: 'Start Work' }} />
+        <Stack.Screen name="WorkInProgress"    component={WorkInProgress}   options={{ title: 'Work In Progress' }} />
+        <Stack.Screen name="WorkComplete"      component={WorkComplete}     options={{ title: 'Complete Work' }} />
+        <Stack.Screen name="Payment"           component={PaymentScreen}    options={{ title: 'Pay Commission' }} />
+        <Stack.Screen name="OwnerProfile"      component={OwnerProfile}     options={{ title: 'My Profile' }} />
+        <Stack.Screen name="EditMachine"       component={EditMachine}      options={{ title: 'Edit Machine' }} />
+
+        {/* ── Admin ── */}
+        <Stack.Screen name="AdminDashboard"   component={AdminDashboard}  options={{ headerShown: false }} />
+        <Stack.Screen name="UsersList"        component={UsersList}       options={{ title: 'Users' }} />
+        <Stack.Screen name="MachinesList"     component={MachinesList}    options={{ title: 'Machines' }} />
+        <Stack.Screen name="PaymentsList"     component={PaymentsList}    options={{ title: 'Payments' }} />
+        <Stack.Screen name="Reports"          component={Reports}         options={{ title: 'Reports' }} />
+        <Stack.Screen name="AdminAppAccount"  component={AdminAppAccount} options={{ title: 'App Bank Account' }} />
 
       </Stack.Navigator>
     </NavigationContainer>

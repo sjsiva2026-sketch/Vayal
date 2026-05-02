@@ -1,8 +1,4 @@
-// assets/index.js
-// Central asset registry for VAYAL.
-// All require() paths below must match actual files in assets/icons/ and assets/images/.
-// Drop your generated PNG files into the folders and this file handles the rest.
-
+// assets/index.js — Central asset registry
 export const ICONS = {
   logo:    require('./icons/logo.png'),
   farmer:  require('./icons/farmer_role.png'),

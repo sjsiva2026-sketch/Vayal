@@ -12,14 +12,14 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.nammavayal.app"
+      "bundleIdentifier": "com.vayal.app"
     },
     "android": {
+      "package": "com.vayal.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#1C7C54"
       },
-      "package": "com.nammavayal.app",
-      "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -31,6 +31,6 @@
     },
     "web": { "bundler": "metro" },
     "scheme": "nammavayal",
-    "plugins": []
+    "plugins": ["expo-font"]
   }
 }

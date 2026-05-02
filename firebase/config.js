@@ -1,8 +1,19 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth, getAuth }        from 'firebase/auth';
-import { getFirestore }                   from 'firebase/firestore';
-import { getStorage }                     from 'firebase/storage';
+// firebase/config.js
+// package: com.vayal.app — matches google-services.json
 
+import { initializeApp, getApps, getApp }  from 'firebase/app';
+import {
+  initializeAuth, getAuth,
+  getReactNativePersistence,
+}                                           from 'firebase/auth';
+import {
+  initializeFirestore, getFirestore,
+  memoryLocalCache,
+}                                           from 'firebase/firestore';
+import { getStorage }                       from 'firebase/storage';
+import AsyncStorage                         from '@react-native-async-storage/async-storage';
+
+// Matches google-services.json exactly
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyAuLdDFLj56oSwkD7EtemKzHfCDklRJMN4',
   authDomain:        'vayal-33b12.firebaseapp.com',
@@ -14,17 +25,28 @@ const FIREBASE_CONFIG = {
 
 const app = getApps().length === 0 ? initializeApp(FIREBASE_CONFIG) : getApp();
 
+// Auth with AsyncStorage persistence
 let _auth = null;
 export const getFirebaseAuth = () => {
   if (_auth) return _auth;
   try {
-    _auth = initializeAuth(app);
-  } catch {
-    _auth = getAuth(app);
-  }
+    _auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch { _auth = getAuth(app); }
   return _auth;
 };
 
-export const db      = getFirestore(app);
+// Firestore — memoryLocalCache (no IndexedDB crash on Android)
+let _db = null;
+const initDb = () => {
+  if (_db) return _db;
+  try {
+    _db = initializeFirestore(app, { localCache: memoryLocalCache() });
+  } catch { _db = getFirestore(app); }
+  return _db;
+};
+
+export const db      = initDb();
 export const storage = getStorage(app);
 export default app;

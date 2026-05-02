@@ -1,32 +1,34 @@
+// src/owner/screens/MachineListOwner.js
 import React, { useCallback, useState } from 'react';
 import {
-  View, Text, StyleSheet, SafeAreaView,
-  FlatList, TouchableOpacity, Alert, Image,
+  View, Text, StyleSheet, SafeAreaView, FlatList,
+  TouchableOpacity, Alert, Image, StatusBar,
 } from 'react-native';
 import { useFocusEffect }    from '@react-navigation/native';
 import { getMachinesByOwner, updateMachine, deleteMachine } from '../../../firebase/firestore';
 import { useUser }           from '../../../context/UserContext';
 import { getCategoryLabel }  from '../../../constants/categories';
 import { CATEGORY_IMAGES }   from '../../../assets/index';
+import { COLORS }            from '../../../constants/colors';
+import { rs, rf, H_PAD }     from '../../../utils/responsive';
+import { IMG }               from '../../../utils/imageSize';
+import { FIcon }             from '../../../utils/icons';
 import EmptyState            from '../../common/components/EmptyState';
 import Loader                from '../../common/components/Loader';
-import { COLORS }            from '../../../constants/colors';
 
-// ─── Machine type visual config ───────────────────────────────────────────────
-const MACHINE_THEME = {
-  harvester:    { bg: '#FFF8E7', border: '#F59E0B', label_color: '#92400E' },
-  rotavator:    { bg: '#EFF6FF', border: '#3B82F6', label_color: '#1D4ED8' },
-  cultivator:   { bg: '#F0FDF4', border: '#22C55E', label_color: '#166534' },
-  strawchopper: { bg: '#FEF2F2', border: '#EF4444', label_color: '#991B1B' },
+const THEMES = {
+  harvester:    { bg: '#FFF8E7', border: '#F59E0B', lc: '#92400E', bar: '#F59E0B' },
+  rotavator:    { bg: '#EFF6FF', border: '#3B82F6', lc: '#1D4ED8', bar: '#3B82F6' },
+  cultivator:   { bg: '#F0FDF4', border: '#22C55E', lc: '#166534', bar: '#22C55E' },
+  strawchopper: { bg: '#FEF2F2', border: '#EF4444', lc: '#991B1B', bar: '#EF4444' },
 };
-const DEFAULT_THEME = { bg: '#F4F6F8', border: '#9CA3AF', label_color: '#374151' };
+const DT = { bg: '#F4F6F8', border: '#9CA3AF', lc: '#374151', bar: COLORS.primary };
 
-// ─── 4 action icons per machine card ──────────────────────────────────────────
-const ACTION_ICONS = [
-  { key: 'edit',     icon: '✏️', label: 'EDIT',     bg: '#EEF7FF', color: '#1D4ED8', border: '#BFDBFE' },
-  { key: 'toggle',   icon: '🔄', label: 'STATUS',   bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0' },
-  { key: 'bookings', icon: '📋', label: 'REQUESTS', bg: '#FFF9E6', color: '#92400E', border: '#FDE68A' },
-  { key: 'delete',   icon: '🗑️', label: 'DELETE',   bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA' },
+const ACTIONS = [
+  { key: 'edit',     icon: 'edit-2',   label: 'EDIT',     bg: '#EEF7FF', color: '#1D4ED8', border: '#BFDBFE' },
+  { key: 'toggle',   icon: 'refresh-cw', label: 'STATUS', bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0' },
+  { key: 'bookings', icon: 'clipboard', label: 'ORDERS',  bg: '#FFF9E6', color: '#92400E', border: '#FDE68A' },
+  { key: 'delete',   icon: 'trash-2',  label: 'DELETE',   bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA' },
 ];
 
 export default function MachineListOwner({ navigation }) {
@@ -39,53 +41,30 @@ export default function MachineListOwner({ navigation }) {
     if (!uid) { setLoading(false); return; }
     setLoading(true);
     getMachinesByOwner(uid)
-      .then(snap => {
-        setMachines(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setLoading(false);
-      })
+      .then(snap => { setMachines(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); })
       .catch(() => setLoading(false));
   }, [uid]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const toggleActive = async (m) => {
-    await updateMachine(m.id, { isActive: !m.isActive });
-    load();
-  };
-
+  const toggleActive = async (m) => { await updateMachine(m.id, { isActive: !m.isActive }); load(); };
   const handleDelete = (id) => {
     Alert.alert('Delete Machine?', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => { await deleteMachine(id); load(); },
-      },
+      { text: 'Delete', style: 'destructive', onPress: async () => { await deleteMachine(id); load(); }},
     ]);
   };
-
   const handleAction = (key, item) => {
     switch (key) {
-      case 'edit':
-        navigation.navigate('EditMachine', { machine: item });
-        break;
+      case 'edit':     return navigation.navigate('EditMachine', { machine: item });
       case 'toggle':
         Alert.alert(
-          item.isActive ? 'Deactivate Machine?' : 'Activate Machine?',
-          item.isActive
-            ? "Farmers won't be able to book this machine."
-            : 'This machine will be visible to farmers.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Confirm', onPress: () => toggleActive(item) },
-          ],
-        );
-        break;
-      case 'bookings':
-        navigation.navigate('BookingRequests');
-        break;
-      case 'delete':
-        handleDelete(item.id);
-        break;
+          item.isActive ? 'Deactivate?' : 'Activate?',
+          item.isActive ? "Farmers won't see this machine." : 'Machine will be visible to farmers.',
+          [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', onPress: () => toggleActive(item) }]
+        ); return;
+      case 'bookings': return navigation.navigate('BookingRequests');
+      case 'delete':   return handleDelete(item.id);
     }
   };
 
@@ -93,101 +72,78 @@ export default function MachineListOwner({ navigation }) {
 
   return (
     <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <FlatList
         data={machines}
         keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+        contentContainerStyle={{ padding: H_PAD, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          <TouchableOpacity
-            style={s.addBtn}
-            onPress={() => navigation.navigate('AddMachine')}
-            activeOpacity={0.88}
-          >
-            <Text style={s.addTxt}>➕  Add New Machine</Text>
+          <TouchableOpacity style={s.addBtn} onPress={() => navigation.navigate('AddMachine')} activeOpacity={0.88}>
+            <FIcon name="plus-circle" size={20} color="#fff" fallback="＋" style={{ marginRight: rs(8) }} />
+            <Text style={s.addTxt}>Add New Machine</Text>
           </TouchableOpacity>
         }
         ListEmptyComponent={
-          <EmptyState
-            icon="🚜"
-            title="No machines yet"
-            subtitle="Tap above to add your first machine"
-          />
+          <EmptyState icon="🚜" title="No machines yet" subtitle="Tap above to add your first machine" />
         }
         renderItem={({ item }) => {
-          const label  = getCategoryLabel(item.type);
-          const img    = CATEGORY_IMAGES[item.type];
-          const theme  = MACHINE_THEME[item.type] || DEFAULT_THEME;
+          const label = getCategoryLabel(item.type);
+          const img   = CATEGORY_IMAGES[item.type];
+          const t     = THEMES[item.type] || DT;
 
           return (
             <View style={s.card}>
+              {/* Left bar */}
+              <View style={[s.accentBar, { backgroundColor: t.bar }]} />
 
-              {/* ── Card Header ── */}
-              <View style={s.cardHeader}>
+              <View style={s.cardInner}>
+                {/* Header row */}
+                <View style={s.cardHeader}>
+                  {/* Image block */}
+                  <View style={[s.imageBlock, { backgroundColor: t.bg, borderColor: t.border }]}>
+                    {img
+                      ? <Image source={img} style={{ width: IMG.CATEGORY_IMG_IN_BOX, height: IMG.CATEGORY_IMG_IN_BOX }} resizeMode="contain" />
+                      : <Text style={{ fontSize: rf(28) }}>🚜</Text>
+                    }
+                    <Text style={[s.imageBlockLabel, { color: t.lc }]} numberOfLines={1}>{label.toUpperCase()}</Text>
+                  </View>
 
-                {/* Machine image + name block */}
-                <View style={[s.imageBlock, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                  {img
-                    ? <Image source={img} style={s.machineImage} resizeMode="contain" />
-                    : <Text style={s.fallbackEmoji}>🚜</Text>
-                  }
-                  <Text style={[s.imageBlockLabel, { color: theme.label_color }]} numberOfLines={1}>
-                    {label}
-                  </Text>
+                  {/* Info */}
+                  <View style={s.headerInfo}>
+                    <Text style={s.machineType}>{label}</Text>
+                    <Text style={s.metaRow}>💰 ₹{item.price_per_hour}/hr</Text>
+                    <Text style={s.metaRow}>📍 {item.taluk}</Text>
+                  </View>
+
+                  {/* Active pill */}
+                  <View style={[s.statusPill, { backgroundColor: item.isActive ? '#DCFCE7' : '#FEE2E2' }]}>
+                    <View style={[s.statusDot, { backgroundColor: item.isActive ? COLORS.success : COLORS.error }]} />
+                    <Text style={[s.statusTxt, { color: item.isActive ? '#166534' : '#991B1B' }]}>
+                      {item.isActive ? 'ON' : 'OFF'}
+                    </Text>
+                  </View>
                 </View>
 
-                {/* Info block */}
-                <View style={s.headerInfo}>
-                  <Text style={s.machineType}>{label}</Text>
-                  <Text style={s.metaRow}>💰 ₹{item.price_per_hour}/hr</Text>
-                  <Text style={s.metaRow}>📍 {item.taluk}</Text>
-                  {item.district ? <Text style={s.metaRow}>🗺️ {item.district}</Text> : null}
-                </View>
-
-                {/* Active / Inactive pill */}
-                <View style={[
-                  s.statusPill,
-                  { backgroundColor: item.isActive ? '#DCFCE7' : '#FEE2E2' },
-                ]}>
-                  <View style={[
-                    s.statusDot,
-                    { backgroundColor: item.isActive ? COLORS.success : COLORS.error },
-                  ]} />
-                  <Text style={[
-                    s.statusTxt,
-                    { color: item.isActive ? '#166534' : '#991B1B' },
-                  ]}>
-                    {item.isActive ? 'ACTIVE' : 'OFF'}
-                  </Text>
+                {/* 4 action icons */}
+                <View style={s.actionsRow}>
+                  {ACTIONS.map(a => {
+                    const isToggle = a.key === 'toggle';
+                    const bg     = isToggle ? (item.isActive ? '#FEF2F2' : '#F0FDF4') : a.bg;
+                    const color  = isToggle ? (item.isActive ? '#B91C1C' : '#15803D') : a.color;
+                    const border = isToggle ? (item.isActive ? '#FECACA' : '#BBF7D0') : a.border;
+                    const dynLabel = isToggle ? (item.isActive ? 'PAUSE' : 'RESUME') : a.label;
+                    return (
+                      <TouchableOpacity key={a.key} style={s.actionItem} onPress={() => handleAction(a.key, item)} activeOpacity={0.75}>
+                        <View style={[s.actionCircle, { backgroundColor: bg, borderColor: border }]}>
+                          <FIcon name={a.icon} size={18} color={color} fallback="•" />
+                        </View>
+                        <Text style={[s.actionLabel, { color }]}>{dynLabel}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
-
-              {/* ── 4 Action Icons ── */}
-              <View style={s.actionsRow}>
-                {ACTION_ICONS.map((a) => {
-                  const isToggle = a.key === 'toggle';
-                  const bg     = isToggle ? (item.isActive ? '#FEF2F2' : '#F0FDF4') : a.bg;
-                  const color  = isToggle ? (item.isActive ? '#B91C1C' : '#15803D') : a.color;
-                  const border = isToggle ? (item.isActive ? '#FECACA' : '#BBF7D0') : a.border;
-                  const dynIcon  = isToggle ? (item.isActive ? '⏸️' : '▶️') : a.icon;
-                  const dynLabel = isToggle ? (item.isActive ? 'PAUSE' : 'RESUME') : a.label;
-
-                  return (
-                    <TouchableOpacity
-                      key={a.key}
-                      style={s.actionItem}
-                      onPress={() => handleAction(a.key, item)}
-                      activeOpacity={0.75}
-                    >
-                      <View style={[s.actionCircle, { backgroundColor: bg, borderColor: border }]}>
-                        <Text style={s.actionIcon}>{dynIcon}</Text>
-                      </View>
-                      <Text style={[s.actionLabel, { color }]}>{dynLabel}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
             </View>
           );
         }}
@@ -197,66 +153,23 @@ export default function MachineListOwner({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: COLORS.background },
-
-  addBtn:  {
-    backgroundColor: COLORS.primary,
-    borderRadius: 14, padding: 16,
-    alignItems: 'center', marginBottom: 16, elevation: 3,
-  },
-  addTxt:  { color: '#fff', fontWeight: '800', fontSize: 15 },
-
-  // ── Card ──
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 18, padding: 16,
-    marginBottom: 14, elevation: 3,
-  },
-
-  // ── Card Header ──
-  cardHeader:    { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-
-  // Machine image block with name beneath
-  imageBlock: {
-    width: 80, height: 86,
-    borderRadius: 14, borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center',
-    marginRight: 12, paddingHorizontal: 4, paddingBottom: 4,
-  },
-  machineImage:   { width: 54, height: 46 },
-  fallbackEmoji:  { fontSize: 30 },
-  imageBlockLabel:{
-    fontSize: 9, fontWeight: '800',
-    textAlign: 'center', marginTop: 4,
-    letterSpacing: 0.3,
-  },
-
-  // Info
-  headerInfo:    { flex: 1 },
-  machineType:   { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 4 },
-  metaRow:       { fontSize: 12, color: COLORS.textSecondary, marginTop: 1 },
-
-  statusPill:    {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, alignSelf: 'flex-start',
-  },
-  statusDot:     { width: 7, height: 7, borderRadius: 4, marginRight: 5 },
-  statusTxt:     { fontSize: 11, fontWeight: '800' },
-
-  // ── 4 Action Icons ──
-  actionsRow:    {
-    flexDirection: 'row',
-    borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingTop: 14,
-  },
-  actionItem:    { flex: 1, alignItems: 'center' },
-  actionCircle:  {
-    width: 46, height: 46, borderRadius: 23,
-    borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 6,
-  },
-  actionIcon:    { fontSize: 20 },
-  actionLabel:   { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
+  safe:            { flex: 1, backgroundColor: COLORS.background },
+  addBtn:          { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, borderRadius: rs(14), padding: rs(16), alignItems: 'center', justifyContent: 'center', marginBottom: rs(16), elevation: 3 },
+  addTxt:          { color: '#fff', fontWeight: '800', fontSize: rf(15) },
+  card:            { flexDirection: 'row', backgroundColor: '#fff', borderRadius: rs(18), marginBottom: rs(14), elevation: 3, overflow: 'hidden' },
+  accentBar:       { width: rs(5) },
+  cardInner:       { flex: 1, padding: rs(14) },
+  cardHeader:      { flexDirection: 'row', alignItems: 'center', marginBottom: rs(14) },
+  imageBlock:      { width: rs(76), borderRadius: rs(14), borderWidth: rs(1.5), alignItems: 'center', justifyContent: 'center', marginRight: rs(12), paddingVertical: rs(10), paddingHorizontal: rs(4) },
+  imageBlockLabel: { fontSize: rf(9), fontWeight: '800', textAlign: 'center', marginTop: rs(4) },
+  headerInfo:      { flex: 1 },
+  machineType:     { fontSize: rf(16), fontWeight: '800', color: COLORS.textPrimary, marginBottom: rs(4) },
+  metaRow:         { fontSize: rf(12), color: COLORS.textSecondary, marginTop: rs(2) },
+  statusPill:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(10), paddingVertical: rs(5), borderRadius: rs(20), alignSelf: 'flex-start' },
+  statusDot:       { width: rs(7), height: rs(7), borderRadius: rs(4), marginRight: rs(5) },
+  statusTxt:       { fontSize: rf(11), fontWeight: '800' },
+  actionsRow:      { flexDirection: 'row', borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: rs(14) },
+  actionItem:      { flex: 1, alignItems: 'center' },
+  actionCircle:    { width: rs(44), height: rs(44), borderRadius: rs(22), borderWidth: rs(1.5), alignItems: 'center', justifyContent: 'center', marginBottom: rs(6) },
+  actionLabel:     { fontSize: rf(10), fontWeight: '800' },
 });

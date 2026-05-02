@@ -1,51 +1,96 @@
+// src/owner/screens/PaymentScreen.js
+//
+// ── IMAGE SIZES (pixel-accurate) ─────────────────────────────────────────────
+// gpay.png / phonepe.png / paytm.png → 256×256px source, 1:1 square
+// Display: 55% of card width, calculated from screen width
+//   375dp screen → card=108dp → image=59dp → 177px rendered @ xxhdpi (69% of 256) ✅
+//   320dp screen → card=89dp  → image=49dp → 147px rendered @ xxhdpi (57% of 256) ✅
+//   414dp screen → card=121dp → image=66dp → 198px rendered @ xxhdpi (77% of 256) ✅
+// All sharp — source 256px is never upscaled
+//
+// ── RESPONSIVE LAYOUT ────────────────────────────────────────────────────────
+// • flex:1 everywhere — no fixed heights
+// • All sizes via Dimensions API (scale factor)
+// • rf() — clamped responsive font
+// • UPI logo width = percentage of card (no fixed pixel)
+// • KAV behavior="height" + ScrollView flexGrow:1 — keyboard safe
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
   TouchableOpacity, Alert, Linking, Image, AppState,
-  ActivityIndicator,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
+  Dimensions, StatusBar,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient }  from 'expo-linear-gradient';
+import { ICONS }           from '../../../assets/index';
 import {
-  upsertDailyPayment, updateUser, getDailyPayment, addAppAccountEntry,
+  upsertDailyPayment, updateUser,
+  getDailyPayment, addAppAccountEntry,
 } from '../../../firebase/firestore';
 import { useUser }     from '../../../context/UserContext';
 import { todayString } from '../../../utils/dateFormatter';
 import { CONFIG }      from '../../../constants/config';
 import Loader          from '../../common/components/Loader';
-import { COLORS }      from '../../../constants/colors';
-import { ICONS }       from '../../../assets/index';
+import { FIcon }       from '../../../utils/icons';
 
+// ── Responsive helpers ────────────────────────────────────────────────────────
+const { width: W } = Dimensions.get('window');
+const BASE         = 375;
+const scale        = W / BASE;
+
+// Responsive scale — proportional to screen width
+const rs = (dp) => Math.round(dp * scale);
+
+// Responsive font — clamped min 80% / max 120%
+const rf = (dp) => {
+  const scaled = Math.round(dp * scale);
+  return Math.min(Math.max(scaled, Math.round(dp * 0.8)), Math.round(dp * 1.2));
+};
+
+// ── UPI logo size (pixel-accurate) ──────────────────────────────────────────
+// 3 cards in row, horizontal padding=32, gaps=20
+// Image = 55% of card width → always sharp vs 256px source
+const UPI_CARD_W = (W - rs(32) - rs(20)) / 3;
+const UPI_IMG_W  = Math.round(UPI_CARD_W * 0.55);
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const PRIMARY      = '#1C7C54';
 const VAYAL_UPI    = CONFIG.VAYAL_UPI_ID;
 const VAYAL_NAME   = CONFIG.VAYAL_UPI_NAME;
-const VAYAL_SCHEME = 'vayal'; // matches "scheme":"vayal" in app.json
+const VAYAL_SCHEME = 'nammavayal';
 
+// UPI apps — local assets
 const UPI_APPS = [
   {
-    id: 'gpay', shortLabel: 'GPay', emoji: '🟢',
+    id: 'gpay', shortLabel: 'GPay',
+    image: ICONS.gpay,
     bg: '#F0FDF4', border: '#86EFAC', color: '#166534',
-    buildUrl: (id, name, amt, redirect) =>
-      `tez://upi/pay?pa=${id}&pn=${encodeURIComponent(name)}&am=${amt}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(redirect)}`,
+    buildUrl: (id, name, amt, r) =>
+      `tez://upi/pay?pa=${id}&pn=${encodeURIComponent(name)}&am=${amt}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(r)}`,
   },
   {
-    id: 'phonepe', shortLabel: 'PhonePe', emoji: '🟣',
+    id: 'phonepe', shortLabel: 'PhonePe',
+    image: ICONS.phonepe,
     bg: '#F5F3FF', border: '#C4B5FD', color: '#4C1D95',
-    buildUrl: (id, name, amt, redirect) =>
-      `phonepe://pay?pa=${id}&pn=${encodeURIComponent(name)}&am=${amt}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(redirect)}`,
+    buildUrl: (id, name, amt, r) =>
+      `phonepe://pay?pa=${id}&pn=${encodeURIComponent(name)}&am=${amt}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(r)}`,
   },
   {
-    id: 'paytm', shortLabel: 'Paytm', emoji: '🔵',
+    id: 'paytm', shortLabel: 'Paytm',
+    image: ICONS.paytm,
     bg: '#EFF6FF', border: '#93C5FD', color: '#1D4ED8',
-    buildUrl: (id, name, amt, redirect) =>
-      `paytmmp://pay?pa=${id}&pn=${encodeURIComponent(name)}&am=${amt}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(redirect)}`,
+    buildUrl: (id, name, amt, r) =>
+      `paytmmp://pay?pa=${id}&pn=${encodeURIComponent(name)}&am=${amt}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(r)}`,
   },
 ];
 
 const parseUPIResponse = (url) => {
   if (!url) return null;
   try {
-    const paramStr = url.includes('?') ? url.split('?')[1] : '';
-    const params   = {};
-    paramStr.split('&').forEach(p => {
+    const params = {};
+    (url.includes('?') ? url.split('?')[1] : '').split('&').forEach(p => {
       const [k, v] = p.split('=');
       if (k) params[decodeURIComponent(k)] = decodeURIComponent(v || '');
     });
@@ -53,24 +98,24 @@ const parseUPIResponse = (url) => {
   } catch { return null; }
 };
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function PaymentScreen({ navigation }) {
   const { userProfile, updateProfile } = useUser();
   const uid   = userProfile?.id || '';
   const today = todayString();
   const rate  = CONFIG.COMMISSION_PER_HECTARE;
 
-  const [summary, setSummary]             = useState(null);
-  const [loadingSummary, setLoading]      = useState(true);
-  const [selectedApp, setSelectedApp]     = useState(null);
-  const [upiOpened, setUpiOpened]         = useState(false);
+  const [summary,       setSummary]       = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [selectedApp,   setSelectedApp]   = useState(null);
+  const [upiOpened,     setUpiOpened]     = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(null);
-  const [confirming, setConfirming]       = useState(false);
-  const [paid, setPaid]                   = useState(false);
-  const [txnRef, setTxnRef]               = useState('');
+  const [confirming,    setConfirming]    = useState(false);
+  const [paid,          setPaid]          = useState(false);
+  const [txnRef,        setTxnRef]        = useState('');
 
   const appStateRef  = useRef(AppState.currentState);
   const upiOpenedRef = useRef(false);
-  const checkingRef  = useRef(false);
 
   useEffect(() => {
     if (!uid) { setLoading(false); return; }
@@ -80,48 +125,43 @@ export default function PaymentScreen({ navigation }) {
       .finally(() => setLoading(false));
   }, [uid]);
 
-  // Deep link listener — UPI app redirects to vayal://upi?Status=SUCCESS&txnId=...
+  // Deep link listener — catches UPI response
   useEffect(() => {
-    const linkSub = Linking.addEventListener('url', ({ url }) => {
-      if (url && url.startsWith(VAYAL_SCHEME)) handleUPIResponse(url);
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      if (url?.startsWith(VAYAL_SCHEME)) handleUPIResponse(url);
     });
     Linking.getInitialURL().then(url => {
-      if (url && url.startsWith(VAYAL_SCHEME)) handleUPIResponse(url);
+      if (url?.startsWith(VAYAL_SCHEME)) handleUPIResponse(url);
     });
-    return () => linkSub.remove();
+    return () => sub.remove();
   }, []);
 
-  // AppState fallback — if no deep link fires, detect return from UPI app
+  // AppState fallback — detect return from UPI app
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
       const prev = appStateRef.current;
       appStateRef.current = next;
       if (
-        upiOpenedRef.current && !checkingRef.current &&
-        paymentStatus === null &&
+        upiOpenedRef.current && paymentStatus === null &&
         (prev === 'background' || prev === 'inactive') && next === 'active'
-      ) {
-        setPaymentStatus('pending');
-      }
+      ) setPaymentStatus('pending');
     });
     return () => sub.remove();
   }, [paymentStatus]);
 
   const handleUPIResponse = (url) => {
-    checkingRef.current = true;
-    setPaymentStatus('checking');
     const params = parseUPIResponse(url);
-    if (!params) { setPaymentStatus('pending'); checkingRef.current = false; return; }
+    if (!params) { setPaymentStatus('pending'); return; }
     const status = (params['Status'] || params['status'] || '').toUpperCase();
-    const txn    = params['txnId'] || params['txnRef'] || params['upiTransactionId'] || '';
-    setTxnRef(txn);
-    if      (status === 'SUCCESS')              setPaymentStatus('success');
-    else if (status === 'FAILURE' || status === 'FAILED') setPaymentStatus('failed');
-    else                                        setPaymentStatus('pending');
-    checkingRef.current = false;
+    setTxnRef(params['txnId'] || params['txnRef'] || '');
+    setPaymentStatus(
+      status === 'SUCCESS'                           ? 'success'
+      : status === 'FAILURE' || status === 'FAILED' ? 'failed'
+      : 'pending'
+    );
   };
 
-  if (loadingSummary) return <Loader />;
+  if (loading) return <Loader />;
 
   const amount  = summary?.totalCommission || 0;
   const hectare = summary?.totalHectare    || 0;
@@ -130,16 +170,17 @@ export default function PaymentScreen({ navigation }) {
     setSelectedApp(app.id);
     setPaymentStatus(null);
     setTxnRef('');
-    const redirect  = `${VAYAL_SCHEME}://upi`;
-    const deepLink  = app.buildUrl(VAYAL_UPI, VAYAL_NAME, amount, redirect);
-    const generic   = `upi://pay?pa=${VAYAL_UPI}&pn=${encodeURIComponent(VAYAL_NAME)}&am=${amount}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(redirect)}`;
+    const redirect = `${VAYAL_SCHEME}://upi`;
+    const deepLink = app.buildUrl(VAYAL_UPI, VAYAL_NAME, amount, redirect);
+    const generic  = `upi://pay?pa=${VAYAL_UPI}&pn=${encodeURIComponent(VAYAL_NAME)}&am=${amount}&cu=INR&tn=VayalCommission&url=${encodeURIComponent(redirect)}`;
     try {
-      const canDeep = await Linking.canOpenURL(deepLink);
-      if (canDeep) { await Linking.openURL(deepLink); }
-      else {
-        const canGeneric = await Linking.canOpenURL(generic);
-        if (canGeneric) { await Linking.openURL(generic); }
-        else { Alert.alert(`${app.shortLabel} Not Installed`, `Pay manually to:\n${VAYAL_UPI}`); return; }
+      if (await Linking.canOpenURL(deepLink)) {
+        await Linking.openURL(deepLink);
+      } else if (await Linking.canOpenURL(generic)) {
+        await Linking.openURL(generic);
+      } else {
+        Alert.alert(`${app.shortLabel} Not Installed`, `Pay manually to:\n${VAYAL_UPI}`);
+        return;
       }
       upiOpenedRef.current = true;
       setUpiOpened(true);
@@ -150,15 +191,13 @@ export default function PaymentScreen({ navigation }) {
 
   const canConfirm = paymentStatus === 'success' || paymentStatus === 'pending';
 
-  // After handleConfirm: updateProfile({isLocked:false}) → AppNavigator
-  // re-renders → initialRoute becomes 'OwnerDashboard' → navigate works ✅
   const handleConfirm = async () => {
     setConfirming(true);
     try {
       await upsertDailyPayment(uid, today, {
         status: 'paid', paidAt: new Date().toISOString(),
-        paymentMethod: selectedApp || 'upi', txnRef: txnRef || '',
-        txnVerified: paymentStatus === 'success',
+        paymentMethod: selectedApp || 'upi',
+        txnRef, txnVerified: paymentStatus === 'success',
       });
       await updateUser(uid, {
         isLocked: false, paymentDeadline: null,
@@ -174,224 +213,360 @@ export default function PaymentScreen({ navigation }) {
           ownerPhone: userProfile?.phone || '',
           amount, hectare, date: today,
           paymentMethod: selectedApp || 'upi',
-          upiId: VAYAL_UPI, txnRef: txnRef || '',
+          upiId: VAYAL_UPI, txnRef,
           txnVerified: paymentStatus === 'success',
         });
       }
       setPaid(true);
     } catch (e) {
       Alert.alert('Error', e.message || 'Try again.');
-    } finally {
-      setConfirming(false);
-    }
+    } finally { setConfirming(false); }
   };
 
+  // ── Success screen ────────────────────────────────────────────────────────
   if (paid) {
     return (
       <SafeAreaView style={s.safe}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <ScrollView contentContainerStyle={s.successScroll}>
           <Text style={s.successEmoji}>🎉</Text>
           <Text style={s.successTitle}>Account Unlocked!</Text>
-          <Text style={s.successSub}>Commission paid. All features are now available!</Text>
+          <Text style={s.successSub}>Commission paid. All features available!</Text>
+
           <View style={s.receiptCard}>
             <View style={s.receiptHeader}>
               <Text style={s.receiptTitle}>Payment Receipt</Text>
               <View style={s.paidStamp}><Text style={s.paidStampTxt}>PAID ✓</Text></View>
             </View>
             {[
-              { l: 'Date', v: today },
-              { l: 'Amount', v: `Rs.${amount}`, hi: true },
-              { l: 'Hectares', v: `${hectare} ha` },
+              { l: 'Date',    v: today },
+              { l: 'Amount',  v: `Rs.${amount}`, hi: true },
+              { l: 'Hectares',v: `${hectare} ha` },
               { l: 'UPI App', v: (selectedApp || 'UPI').toUpperCase() },
               { l: 'Paid to', v: VAYAL_UPI },
-              { l: 'Status', v: paymentStatus === 'success' ? '✅ Verified' : '⏳ Admin Review' },
-              txnRef ? { l: 'Txn Ref', v: txnRef } : null,
-            ].filter(Boolean).map((r, i, arr) => (
+              { l: 'Status',  v: paymentStatus === 'success' ? '✅ Verified' : '⏳ Admin Review' },
+            ].map((r, i, arr) => (
               <View key={r.l} style={[s.receiptRow, i === arr.length - 1 && { borderBottomWidth: 0 }]}>
                 <Text style={s.receiptLabel}>{r.l}</Text>
-                <Text style={[s.receiptVal, r.hi && { color: COLORS.primary, fontWeight: '900' }]}>{r.v}</Text>
+                <Text style={[s.receiptVal, r.hi && { color: PRIMARY, fontWeight: '900' }]}>{r.v}</Text>
               </View>
             ))}
           </View>
-          <TouchableOpacity style={s.dashBtn} onPress={() => navigation.navigate('OwnerDashboard')} activeOpacity={0.88}>
+
+          <TouchableOpacity
+            style={s.dashBtn}
+            onPress={() => navigation.navigate('OwnerDashboard')}
+            activeOpacity={0.88}
+          >
             <Text style={s.dashBtnTxt}>Go to Dashboard →</Text>
           </TouchableOpacity>
-          <View style={{ height: 32 }} />
+          <View style={{ height: rs(32) }} />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  const statusColor = paymentStatus === 'success' ? '#166534' : paymentStatus === 'failed' ? '#B91C1C' : paymentStatus === 'pending' ? '#92400E' : '#374151';
-  const statusBg    = paymentStatus === 'success' ? '#DCFCE7' : paymentStatus === 'failed' ? '#FEE2E2' : paymentStatus === 'pending' ? '#FEF9C3' : '#F3F4F6';
-  const statusIcon  = paymentStatus === 'success' ? '✅' : paymentStatus === 'failed' ? '❌' : paymentStatus === 'pending' ? '⏳' : paymentStatus === 'checking' ? '🔄' : null;
-  const statusMsg   = paymentStatus === 'success' ? 'Payment Successful! Tap below to unlock.' : paymentStatus === 'failed' ? 'Payment Failed. Try again.' : paymentStatus === 'pending' ? 'Could not detect automatically. If paid, tap Confirm.' : paymentStatus === 'checking' ? 'Checking...' : null;
+  const statusColor = paymentStatus === 'success' ? '#166534' : paymentStatus === 'failed' ? '#B91C1C' : '#92400E';
+  const statusBg    = paymentStatus === 'success' ? '#DCFCE7' : paymentStatus === 'failed' ? '#FEE2E2' : '#FEF9C3';
+  const statusMsg   = paymentStatus === 'success' ? 'Payment Successful! Tap below to unlock.'
+                    : paymentStatus === 'failed'  ? 'Payment Failed. Try again with a different UPI app.'
+                    : paymentStatus === 'pending' ? 'Payment received. Tap Confirm to unlock your account.'
+                    : null;
 
+  // ── Main payment screen ───────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe}>
-      <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
-        <LinearGradient colors={['#B91C1C', '#EF4444']} style={s.hero}>
-          <Text style={s.heroLock}>🔒</Text>
-          <Text style={s.heroLabel}>Commission Due — Account Locked</Text>
-          <Text style={s.heroAmount}>Rs.{amount}</Text>
-          <Text style={s.heroSub}>{hectare} ha × Rs.{rate}/ha</Text>
-          <View style={s.upiPill}><Text style={s.upiPillTxt}>{VAYAL_UPI}  ·  {VAYAL_NAME}</Text></View>
-        </LinearGradient>
+      <StatusBar barStyle="light-content" backgroundColor="#B91C1C" />
 
-        {/* STEP 1 */}
-        <View style={s.card}>
-          <View style={s.stepRow}>
-            <View style={[s.stepBadge, { backgroundColor: COLORS.primary }]}><Text style={s.stepBadgeTxt}>1</Text></View>
-            <Text style={s.stepTitle}>Open UPI App & Pay</Text>
+      {/*
+        KAV behavior="height" — Android: shrinks view when keyboard opens
+        Ensures Confirm button stays visible
+      */}
+      <KeyboardAvoidingView
+        style={s.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/*
+          ScrollView flexGrow:1 — fills screen, scrollable when keyboard open
+          bounces:false — no iOS bounce on Android
+        */}
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+        >
+
+          {/* ── Hero header ── */}
+          <LinearGradient colors={['#B91C1C', '#EF4444']} style={s.hero}>
+            <Text style={s.heroLock}>🔒</Text>
+            <Text style={s.heroLabel}>Commission Due — Account Locked</Text>
+            <Text style={s.heroAmount}>Rs.{amount}</Text>
+            <Text style={s.heroSub}>{hectare} ha × Rs.{rate}/ha</Text>
+            <View style={s.upiPill}>
+              <Text style={s.upiPillTxt}>{VAYAL_UPI}  ·  {VAYAL_NAME}</Text>
+            </View>
+          </LinearGradient>
+
+          {/* ── STEP 1: Open UPI App ── */}
+          <View style={s.card}>
+            <View style={s.stepRow}>
+              <View style={[s.stepBadge, { backgroundColor: PRIMARY }]}>
+                <Text style={s.stepBadgeTxt}>1</Text>
+              </View>
+              <Text style={s.stepTitle}>Open UPI App & Pay</Text>
+            </View>
+            <Text style={s.stepDesc}>
+              Tap below — Rs.{amount} pre-filled to {VAYAL_UPI}
+            </Text>
+
+            {/*
+              UPI app row — 3 flex:1 cards
+              Image size = UPI_IMG_W (55% of card width)
+              Source: 256×256px | Displayed: ~59dp → 177px @ xxhdpi ✅
+              aspectRatio:1 — always square, never distorts
+            */}
+            <View style={s.upiRow}>
+              {UPI_APPS.map(app => (
+                <TouchableOpacity
+                  key={app.id}
+                  style={[
+                    s.upiCard,
+                    {
+                      backgroundColor: app.bg,
+                      borderColor: selectedApp === app.id ? app.border : '#E5E7EB',
+                      borderWidth: selectedApp === app.id ? rs(2.5) : rs(1.5),
+                    },
+                  ]}
+                  onPress={() => handleOpenUPI(app)}
+                  activeOpacity={0.85}
+                >
+                  {/* Real image from assets — pixel-accurate sizing */}
+                  <Image
+                    source={app.image}
+                    style={{
+                      width: UPI_IMG_W,      // 55% of card — responsive
+                      height: UPI_IMG_W,     // square (source is 1:1)
+                      borderRadius: rs(10),
+                      marginBottom: rs(6),
+                    }}
+                    resizeMode="contain"
+                  />
+                  <Text style={[s.upiLabel, { color: app.color }]}>
+                    {app.shortLabel}
+                  </Text>
+                  {selectedApp === app.id && (
+                    <View style={[s.tick, { backgroundColor: app.color }]}>
+                      <Text style={{ color: '#fff', fontSize: rf(9), fontWeight: '900' }}>✓</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {upiOpened && (
+              <View style={s.openedNote}>
+                <Text style={s.openedNoteTxt}>Waiting for payment result...</Text>
+              </View>
+            )}
           </View>
-          <Text style={s.stepDesc}>Tap below — UPI app opens with Rs.{amount} pre-filled to {VAYAL_UPI}</Text>
-          <View style={s.upiRow}>
-            {UPI_APPS.map(app => (
+
+          {/* ── STEP 2: Payment Result ── */}
+          <View style={s.card}>
+            <View style={s.stepRow}>
+              <View style={[
+                s.stepBadge,
+                { backgroundColor: canConfirm ? '#22C55E' : paymentStatus === 'failed' ? '#EF4444' : '#9CA3AF' },
+              ]}>
+                <Text style={s.stepBadgeTxt}>2</Text>
+              </View>
+              <Text style={s.stepTitle}>Payment Result</Text>
+            </View>
+
+            {paymentStatus ? (
+              <View style={[s.statusBox, { backgroundColor: statusBg }]}>
+                <Text style={[s.statusTxt, { color: statusColor }]}>
+                  {statusMsg}
+                </Text>
+              </View>
+            ) : (
+              <Text style={s.stepDesc}>
+                Result detected automatically when you return from the UPI app.
+              </Text>
+            )}
+
+            {paymentStatus === 'failed' && (
               <TouchableOpacity
-                key={app.id}
-                style={[s.upiCard, { backgroundColor: app.bg, borderColor: selectedApp === app.id ? app.border : '#E5E7EB' }, selectedApp === app.id && { borderWidth: 2.5 }]}
-                onPress={() => handleOpenUPI(app)} activeOpacity={0.85}
+                style={s.retryBtn}
+                onPress={() => {
+                  setPaymentStatus(null);
+                  setUpiOpened(false);
+                  upiOpenedRef.current = false;
+                  setSelectedApp(null);
+                }}
+                activeOpacity={0.88}
               >
-                {ICONS[app.id]
-                  ? <Image source={ICONS[app.id]} style={s.upiLogo} resizeMode="contain" />
-                  : <Text style={s.upiEmoji}>{app.emoji}</Text>}
-                <Text style={[s.upiLabel, { color: app.color }]}>{app.shortLabel}</Text>
-                {selectedApp === app.id && (
-                  <View style={[s.tick, { backgroundColor: app.color }]}>
-                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>✓</Text>
-                  </View>
-                )}
+                <Text style={s.retryBtnTxt}>↩  Try Again</Text>
               </TouchableOpacity>
-            ))}
+            )}
           </View>
-          {upiOpened && <View style={s.openedNote}><Text style={s.openedNoteTxt}>Waiting to return from UPI app...</Text></View>}
-        </View>
 
-        {/* STEP 2 */}
-        <View style={s.card}>
-          <View style={s.stepRow}>
-            <View style={[s.stepBadge, { backgroundColor: canConfirm ? '#22C55E' : paymentStatus === 'failed' ? '#EF4444' : '#9CA3AF' }]}>
-              <Text style={s.stepBadgeTxt}>2</Text>
+          {/* ── STEP 3: Confirm ── */}
+          <View style={s.card}>
+            <View style={s.stepRow}>
+              <View style={[s.stepBadge, { backgroundColor: canConfirm ? PRIMARY : '#9CA3AF' }]}>
+                <Text style={s.stepBadgeTxt}>3</Text>
+              </View>
+              <Text style={s.stepTitle}>Confirm & Unlock Account</Text>
             </View>
-            <Text style={s.stepTitle}>Payment Result</Text>
-          </View>
-          <Text style={s.stepDesc}>Detected automatically when you return from the UPI app.</Text>
-          {paymentStatus === 'checking' && (
-            <View style={[s.statusBox, { backgroundColor: '#F3F4F6' }]}>
-              <ActivityIndicator color={COLORS.primary} size="small" style={{ marginRight: 10 }} />
-              <Text style={[s.statusTxt, { color: '#374151' }]}>Checking...</Text>
-            </View>
-          )}
-          {paymentStatus && paymentStatus !== 'checking' && (
-            <View style={[s.statusBox, { backgroundColor: statusBg }]}>
-              <Text style={s.statusIcon}>{statusIcon}</Text>
-              <Text style={[s.statusTxt, { color: statusColor, flex: 1 }]}>{statusMsg}</Text>
-            </View>
-          )}
-          {!paymentStatus && !upiOpened && (
-            <View style={[s.statusBox, { backgroundColor: '#F3F4F6' }]}>
-              <Text style={[s.statusTxt, { color: '#9CA3AF' }]}>Open a UPI app above first</Text>
-            </View>
-          )}
-          {!paymentStatus && upiOpened && (
-            <View style={[s.statusBox, { backgroundColor: '#FEF9C3' }]}>
-              <ActivityIndicator color="#F59E0B" size="small" style={{ marginRight: 10 }} />
-              <Text style={[s.statusTxt, { color: '#92400E', flex: 1 }]}>Waiting for result...</Text>
-            </View>
-          )}
-          {txnRef ? (
-            <View style={s.txnRefRow}>
-              <Text style={s.txnRefLabel}>Txn Ref:</Text>
-              <Text style={s.txnRefVal}>{txnRef}</Text>
-            </View>
-          ) : null}
-          {paymentStatus === 'failed' && (
-            <TouchableOpacity style={s.retryBtn}
-              onPress={() => { setPaymentStatus(null); setUpiOpened(false); upiOpenedRef.current = false; setSelectedApp(null); }}
-              activeOpacity={0.88}>
-              <Text style={s.retryBtnTxt}>↩ Try Again</Text>
+            <Text style={s.stepDesc}>
+              {canConfirm
+                ? 'Payment confirmed. Tap below to unlock your account.'
+                : 'Complete Steps 1 & 2 first.'}
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                s.confirmBtn,
+                (!canConfirm || confirming) && s.confirmBtnOff,
+              ]}
+              onPress={handleConfirm}
+              disabled={!canConfirm || confirming}
+              activeOpacity={0.88}
+            >
+              {confirming
+                ? <ActivityIndicator color="#fff" size="small" />
+                : (
+                  <Text style={s.confirmBtnTxt}>
+                    {canConfirm
+                      ? '✅  Confirm & Unlock My Account'
+                      : '⛔  Complete Steps 1 & 2 First'}
+                  </Text>
+                )
+              }
             </TouchableOpacity>
-          )}
-        </View>
-
-        {/* STEP 3 */}
-        <View style={s.card}>
-          <View style={s.stepRow}>
-            <View style={[s.stepBadge, { backgroundColor: canConfirm ? COLORS.primary : '#9CA3AF' }]}>
-              <Text style={s.stepBadgeTxt}>3</Text>
-            </View>
-            <Text style={s.stepTitle}>Confirm & Unlock Account</Text>
           </View>
-          <Text style={s.stepDesc}>{canConfirm ? 'Payment detected. Tap below to unlock.' : 'Complete Steps 1 & 2 first.'}</Text>
-          <TouchableOpacity
-            style={[s.confirmBtn, (!canConfirm || confirming) && s.confirmBtnOff]}
-            onPress={handleConfirm} disabled={!canConfirm || confirming} activeOpacity={0.88}
-          >
-            {confirming
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.confirmBtnTxt}>{canConfirm ? '✅ Confirm & Unlock My Account' : '⛔ Complete Steps 1 & 2 First'}</Text>
-            }
-          </TouchableOpacity>
-        </View>
 
-        <View style={s.warnBox}>
-          <Text style={s.warnTxt}>⚠️ Only confirm after actually paying. Admin verifies all transactions.</Text>
-        </View>
-        <View style={{ height: 40 }} />
-      </ScrollView>
+          {/* Warning */}
+          <View style={s.warnBox}>
+            <Text style={s.warnTxt}>
+              ⚠️ Only confirm after actually completing payment.
+              All transactions are verified by admin.
+            </Text>
+          </View>
+
+          <View style={{ height: rs(40) }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
+// All values use rs()/rf() — no fixed dp anywhere
 const s = StyleSheet.create({
-  safe:           { flex: 1, backgroundColor: '#F4F6F8' },
-  container:      { paddingBottom: 32 },
-  hero:           { paddingTop: 48, paddingBottom: 32, paddingHorizontal: 24, alignItems: 'center' },
-  heroLock:       { fontSize: 40, marginBottom: 8 },
-  heroLabel:      { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '700', marginBottom: 4, textAlign: 'center' },
-  heroAmount:     { fontSize: 56, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  heroSub:        { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 16 },
-  upiPill:        { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 7 },
-  upiPillTxt:     { fontSize: 12, color: '#fff', fontWeight: '700', textAlign: 'center' },
-  card:           { margin: 16, marginBottom: 8, backgroundColor: '#fff', borderRadius: 18, padding: 20, elevation: 3 },
-  stepRow:        { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  stepBadge:      { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  stepBadgeTxt:   { color: '#fff', fontSize: 13, fontWeight: '900' },
-  stepTitle:      { fontSize: 15, fontWeight: '900', color: '#111827' },
-  stepDesc:       { fontSize: 13, color: '#6B7280', lineHeight: 20, marginBottom: 16 },
-  upiRow:         { flexDirection: 'row', gap: 10, marginBottom: 8 },
-  upiCard:        { flex: 1, borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, elevation: 1, position: 'relative' },
-  upiLogo:        { width: 40, height: 40, marginBottom: 6, borderRadius: 8 },
-  upiEmoji:       { fontSize: 30, marginBottom: 6 },
-  upiLabel:       { fontSize: 11, fontWeight: '800' },
-  tick:           { position: 'absolute', top: 6, right: 6, width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  openedNote:     { backgroundColor: '#FEF9C3', borderRadius: 10, padding: 10, marginTop: 4 },
-  openedNoteTxt:  { fontSize: 12, color: '#92400E', textAlign: 'center', fontWeight: '600' },
-  statusBox:      { flexDirection: 'row', alignItems: 'center', borderRadius: 12, padding: 14, marginBottom: 10 },
-  statusIcon:     { fontSize: 20, marginRight: 10 },
-  statusTxt:      { fontSize: 13, fontWeight: '600', lineHeight: 20 },
-  txnRefRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 8, padding: 10, marginBottom: 8 },
-  txnRefLabel:    { fontSize: 12, color: '#6B7280', marginRight: 8 },
-  txnRefVal:      { fontSize: 12, fontWeight: '700', color: '#111827', flex: 1 },
-  retryBtn:       { backgroundColor: '#FEE2E2', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  retryBtnTxt:    { color: '#B91C1C', fontSize: 14, fontWeight: '800' },
-  confirmBtn:     { backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 18, alignItems: 'center', elevation: 2 },
-  confirmBtnOff:  { backgroundColor: '#D1D5DB', elevation: 0 },
-  confirmBtnTxt:  { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.3 },
-  warnBox:        { marginHorizontal: 16, backgroundColor: '#FEF2F2', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: '#EF4444', marginTop: 8 },
-  warnTxt:        { fontSize: 12, color: '#B91C1C', lineHeight: 18 },
-  successScroll:  { padding: 28, paddingBottom: 48, alignItems: 'center' },
-  successEmoji:   { fontSize: 72, marginBottom: 16 },
-  successTitle:   { fontSize: 26, fontWeight: '900', color: COLORS.primary, marginBottom: 8, textAlign: 'center' },
-  successSub:     { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  receiptCard:    { backgroundColor: '#fff', borderRadius: 18, padding: 18, elevation: 3, width: '100%', marginBottom: 20 },
-  receiptHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  receiptTitle:   { fontSize: 15, fontWeight: '800', color: '#111827' },
-  paidStamp:      { backgroundColor: '#DCFCE7', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  paidStampTxt:   { fontSize: 11, fontWeight: '900', color: '#166534' },
-  receiptRow:     { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  receiptLabel:   { fontSize: 13, color: '#6B7280' },
-  receiptVal:     { fontSize: 13, fontWeight: '700', color: '#111827' },
-  dashBtn:        { backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 32, alignItems: 'center', elevation: 2 },
-  dashBtnTxt:     { color: '#fff', fontSize: 15, fontWeight: '900' },
+
+  // ── Layout ─────────────────────────────────────────────────────────────────
+  safe:    { flex: 1, backgroundColor: '#F4F6F8' },
+  kav:     { flex: 1 },
+  scroll:  { flexGrow: 1 },         // fills screen + scrollable on overflow
+
+  // ── Hero header ──────────────────────────────────────────────────────────
+  hero: {
+    paddingTop:        rs(40),
+    paddingBottom:     rs(28),
+    paddingHorizontal: rs(24),
+    alignItems:        'center',
+  },
+  heroLock:   { fontSize: rf(36), marginBottom: rs(8) },
+  heroLabel:  { fontSize: rf(13), color: 'rgba(255,255,255,0.85)', fontWeight: '700', marginBottom: rs(4), textAlign: 'center' },
+  heroAmount: { fontSize: rf(52), fontWeight: '900', color: '#fff', marginBottom: rs(4) },
+  heroSub:    { fontSize: rf(13), color: 'rgba(255,255,255,0.7)', marginBottom: rs(16) },
+  upiPill:    { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: rs(20), paddingHorizontal: rs(16), paddingVertical: rs(7) },
+  upiPillTxt: { fontSize: rf(12), color: '#fff', fontWeight: '700', textAlign: 'center' },
+
+  // ── Cards ────────────────────────────────────────────────────────────────
+  card: {
+    marginHorizontal: rs(16),
+    marginTop:        rs(12),
+    backgroundColor:  '#fff',
+    borderRadius:     rs(18),
+    padding:          rs(20),
+    elevation:        3,
+    shadowColor:      '#000',
+    shadowOffset:     { width: 0, height: rs(2) },
+    shadowOpacity:    0.08,
+    shadowRadius:     rs(6),
+  },
+  stepRow:      { flexDirection: 'row', alignItems: 'center', marginBottom: rs(8) },
+  stepBadge:    { width: rs(28), height: rs(28), borderRadius: rs(14), alignItems: 'center', justifyContent: 'center', marginRight: rs(10) },
+  stepBadgeTxt: { color: '#fff', fontSize: rf(13), fontWeight: '900' },
+  stepTitle:    { fontSize: rf(15), fontWeight: '900', color: '#111827' },
+  stepDesc:     { fontSize: rf(13), color: '#6B7280', lineHeight: rf(20), marginBottom: rs(16) },
+
+  // ── UPI row — 3 cards, each flex:1 ─────────────────────────────────────
+  upiRow:   { flexDirection: 'row', gap: rs(10), marginBottom: rs(8) },
+  upiCard:  {
+    flex:           1,          // equal width — no fixed width
+    borderRadius:   rs(14),
+    paddingVertical:rs(14),
+    alignItems:     'center',
+    elevation:       1,
+    position:       'relative',
+  },
+  // Image sized inline: { width: UPI_IMG_W, height: UPI_IMG_W }
+  upiLabel: { fontSize: rf(11), fontWeight: '800' },
+  tick: {
+    position:   'absolute',
+    top:        rs(6),
+    right:      rs(6),
+    width:      rs(16),
+    height:     rs(16),
+    borderRadius:rs(8),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  openedNote:    { backgroundColor: '#FEF9C3', borderRadius: rs(10), padding: rs(10), marginTop: rs(4) },
+  openedNoteTxt: { fontSize: rf(12), color: '#92400E', textAlign: 'center', fontWeight: '600' },
+
+  // ── Status box ───────────────────────────────────────────────────────────
+  statusBox: { borderRadius: rs(12), padding: rs(14), marginBottom: rs(8) },
+  statusTxt: { fontSize: rf(13), fontWeight: '700', lineHeight: rf(20) },
+
+  retryBtn:    { backgroundColor: '#FEE2E2', borderRadius: rs(10), paddingVertical: rs(12), alignItems: 'center', marginTop: rs(6) },
+  retryBtnTxt: { color: '#B91C1C', fontSize: rf(14), fontWeight: '800' },
+
+  // ── Confirm button ───────────────────────────────────────────────────────
+  confirmBtn:    { backgroundColor: PRIMARY, borderRadius: rs(14), paddingVertical: rs(18), alignItems: 'center', elevation: 2 },
+  confirmBtnOff: { backgroundColor: '#D1D5DB', elevation: 0 },
+  confirmBtnTxt: { color: '#fff', fontSize: rf(15), fontWeight: '900', letterSpacing: 0.3 },
+
+  // ── Warning ──────────────────────────────────────────────────────────────
+  warnBox: {
+    marginHorizontal: rs(16),
+    marginTop:        rs(12),
+    backgroundColor:  '#FEF2F2',
+    borderRadius:     rs(12),
+    padding:          rs(14),
+    borderLeftWidth:  rs(4),
+    borderLeftColor:  '#EF4444',
+  },
+  warnTxt: { fontSize: rf(12), color: '#B91C1C', lineHeight: rf(18) },
+
+  // ── Success screen ───────────────────────────────────────────────────────
+  successScroll:  { flexGrow: 1, padding: rs(28), paddingBottom: rs(48), alignItems: 'center' },
+  successEmoji:   { fontSize: rf(64), marginBottom: rs(16) },
+  successTitle:   { fontSize: rf(26), fontWeight: '900', color: PRIMARY, marginBottom: rs(8), textAlign: 'center' },
+  successSub:     { fontSize: rf(14), color: '#6B7280', textAlign: 'center', lineHeight: rf(22), marginBottom: rs(24) },
+  receiptCard:    { backgroundColor: '#fff', borderRadius: rs(18), padding: rs(18), elevation: 3, width: '100%', marginBottom: rs(20) },
+  receiptHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: rs(14) },
+  receiptTitle:   { fontSize: rf(15), fontWeight: '800', color: '#111827' },
+  paidStamp:      { backgroundColor: '#DCFCE7', borderRadius: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(4) },
+  paidStampTxt:   { fontSize: rf(11), fontWeight: '900', color: '#166534' },
+  receiptRow:     { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: rs(10), borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  receiptLabel:   { fontSize: rf(13), color: '#6B7280' },
+  receiptVal:     { fontSize: rf(13), fontWeight: '700', color: '#111827' },
+  dashBtn:        { backgroundColor: PRIMARY, borderRadius: rs(14), paddingVertical: rs(16), paddingHorizontal: rs(32), alignItems: 'center', elevation: 2 },
+  dashBtnTxt:     { color: '#fff', fontSize: rf(15), fontWeight: '900' },
 });

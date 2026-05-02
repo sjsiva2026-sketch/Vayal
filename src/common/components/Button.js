@@ -1,30 +1,52 @@
+// src/common/components/Button.js
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View } from 'react-native';
 import { COLORS } from '../../../constants/colors';
+import { rf, rs } from '../../../utils/responsive';
 
-export default function Button({ title, onPress, variant = 'primary', loading = false, disabled = false, style }) {
-  const bgColor = variant === 'primary'   ? COLORS.primary
-                : variant === 'secondary' ? COLORS.secondary
-                : variant === 'danger'    ? COLORS.error
-                : COLORS.border;
+export default function Button({
+  title, onPress,
+  variant  = 'primary',
+  loading  = false,
+  disabled = false,
+  style,
+  icon,
+  iconRight,
+}) {
+  const bg  = variant === 'primary'  ? COLORS.primary
+             : variant === 'danger'  ? COLORS.error
+             : variant === 'outline' ? 'transparent'
+             : '#F4F5F7';
+  const col = variant === 'outline'  ? COLORS.primary
+             : variant === 'ghost'   ? COLORS.textPrimary
+             : '#fff';
+  const bw  = variant === 'outline'  ? rs(1.5) : 0;
+  const bc  = variant === 'outline'  ? COLORS.primary : 'transparent';
 
   return (
     <TouchableOpacity
-      style={[styles.btn, { backgroundColor: bgColor }, (disabled || loading) && styles.disabled, style]}
+      style={[s.btn, { backgroundColor: bg, borderWidth: bw, borderColor: bc },
+              (disabled || loading) && s.disabled, style]}
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.8}
+      activeOpacity={0.82}
     >
-      {loading
-        ? <ActivityIndicator color={COLORS.white} />
-        : <Text style={styles.text}>{title}</Text>
-      }
+      {loading ? (
+        <ActivityIndicator color={col} size="small" />
+      ) : (
+        <View style={s.inner}>
+          {icon && <View style={{ marginRight: rs(8) }}>{icon}</View>}
+          <Text style={[s.text, { color: col }]}>{title}</Text>
+          {iconRight && <View style={{ marginLeft: rs(8) }}>{iconRight}</View>}
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
-  btn:      { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginVertical: 6 },
-  text:     { color: COLORS.white, fontSize: 16, fontWeight: '600' },
-  disabled: { opacity: 0.6 },
+const s = StyleSheet.create({
+  btn:      { borderRadius: rs(14), paddingVertical: rs(14), alignItems: 'center', justifyContent: 'center' },
+  inner:    { flexDirection: 'row', alignItems: 'center' },
+  text:     { fontSize: rf(15), fontWeight: '700' },
+  disabled: { opacity: 0.55 },
 });

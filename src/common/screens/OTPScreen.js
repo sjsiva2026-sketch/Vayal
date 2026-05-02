@@ -1,22 +1,32 @@
-import React, { useState, useRef } from 'react';
+// src/common/screens/OTPScreen.js
+// logo.png (512×512px) — LOGO_CONTAINER=80dp circle, LOGO_SIZE=64dp image
+// OTP keyboard fix: full-size transparent TextInput
+
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
-  Alert, TextInput, StatusBar, ActivityIndicator, Keyboard,
+  TextInput, StatusBar, ActivityIndicator, Keyboard,
+  KeyboardAvoidingView, ScrollView, Platform, Dimensions, Image,
 } from 'react-native';
-import { LinearGradient }  from 'expo-linear-gradient';
-import { CommonActions }   from '@react-navigation/native';
-import { verifyOTP }       from '../../../firebase/auth';
-import { getUser }         from '../../../firebase/firestore';
-import { useAuth }         from '../../../context/AuthContext';
-import { useUser }         from '../../../context/UserContext';
-import { COLORS }          from '../../../constants/colors';
+import { CommonActions } from '@react-navigation/native';
+import { verifyOTP }     from '../../../firebase/auth';
+import { getUser }       from '../../../firebase/firestore';
+import { useAuth }       from '../../../context/AuthContext';
+import { useUser }       from '../../../context/UserContext';
+import { FIcon }         from '../../../utils/icons';
+import { ICONS }         from '../../../assets/index';
+import { IMG }           from '../../../utils/imageSize';
 
-// Role → first screen registered in AppNavigator
-const ROLE_HOME = {
-  farmer: 'FarmerHome',
-  owner:  'OwnerDashboard', // always registered in AppNavigator
-  admin:  'AdminDashboard',
-};
+const PRIMARY      = '#1C7C54';
+const { width: W } = Dimensions.get('window');
+const scale        = W / 375;
+const rf           = (dp) => Math.round(dp * scale);
+
+// OTP box: 6 boxes, padH=48, gaps=40
+const BOX_W = Math.floor((W - 48 - 40) / 6);
+const BOX_H = BOX_W + 10;
+
+const ROLE_HOME = { farmer: 'FarmerHome', owner: 'OwnerHome', admin: 'AdminDashboard' };
 
 export default function OTPScreen({ navigation, route }) {
   const { phone, role, devOTP }                     = route.params || {};
@@ -36,30 +46,20 @@ export default function OTPScreen({ navigation, route }) {
     return () => clearInterval(id);
   }, [timer]);
 
-  const goHome = (profileRole) => {
-    const screen = ROLE_HOME[profileRole] || 'RoleSelect';
-    navigation.dispatch(
-      CommonActions.reset({ index: 0, routes: [{ name: screen }] })
-    );
-  };
+  const goHome = (r) =>
+    navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: ROLE_HOME[r] || 'RoleSelect' }] }));
 
   const doVerify = async (code) => {
-    const clean = (code || otp).trim();
-    if (clean.length !== 6) return;
-    if (busyRef.current || loading) return;
+    const clean = (code ?? otp).trim();
+    if (clean.length !== 6 || busyRef.current || loading) return;
     busyRef.current = true;
     Keyboard.dismiss();
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       const authUser = await verifyOTP(clean);
       const profile  = await getUser(authUser.uid);
-
       if (profile) {
-        setUser(authUser);
-        setAuthProfile(profile);
-        setUserProfile(profile);
-        goHome(profile.role);
+        setUser(authUser); setAuthProfile(profile); setUserProfile(profile); goHome(profile.role);
       } else {
         setUser(authUser);
         navigation.navigate('ProfileSetup', { uid: authUser.uid, phone, role });
@@ -67,143 +67,151 @@ export default function OTPScreen({ navigation, route }) {
     } catch (e) {
       setError(e.message || 'Verification failed. Try again.');
       setOtp('');
-      setTimeout(() => inputRef.current?.focus(), 100);
-    } finally {
-      setLoading(false);
-      busyRef.current = false;
-    }
+      setTimeout(() => inputRef.current?.focus(), 150);
+    } finally { setLoading(false); busyRef.current = false; }
   };
 
   const handleChange = (text) => {
-    const digits = text.replace(/[^0-9]/g, '').slice(0, 6);
-    setOtp(digits);
-    setError('');
+    const digits = text.replace(/\D/g, '').slice(0, 6);
+    setOtp(digits); setError('');
     if (digits.length === 6) doVerify(digits);
   };
 
+  const focusInput = useCallback(() => inputRef.current?.focus(), []);
+
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#145A3E" />
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <KeyboardAvoidingView style={s.kav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
 
-      <LinearGradient colors={['#145A3E', '#1C7C54', '#2E9E6B']} style={s.header}>
-        <View style={s.iconBox}><Text style={s.icon}>🔐</Text></View>
-        <Text style={s.title}>Verify OTP</Text>
-        <View style={s.phonePill}>
-          <Text style={s.phoneTxt}>📱  +91 {phone}</Text>
-        </View>
-      </LinearGradient>
+          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+            <FIcon name="arrow-left" size={22} color="#111827" fallback="←" />
+          </TouchableOpacity>
 
-      <View style={s.card}>
-        <View style={s.handle} />
-
-        {devOTP ? (
-          <View style={s.devBox}>
-            <Text style={s.devTitle}>🔑 Your OTP Code</Text>
-            <Text style={s.devCode}>{devOTP}</Text>
-            <Text style={s.devHint}>Type this code in the box below ↓</Text>
-          </View>
-        ) : null}
-
-        <Text style={s.label}>Enter 6-digit OTP</Text>
-
-        <TouchableOpacity activeOpacity={1} onPress={() => inputRef.current?.focus()} style={s.boxRow}>
-          {[0, 1, 2, 3, 4, 5].map(i => (
-            <View
-              key={i}
-              style={[
-                s.box,
-                otp.length === i && !loading && s.boxActive,
-                otp.length > i  && s.boxFilled,
-                !!error         && s.boxError,
-              ]}
-            >
-              <Text style={s.boxTxt}>{otp[i] ?? ''}</Text>
+          <View style={s.topSection}>
+            {/*
+              logo.png: 512×512px source
+              Container: LOGO_CONTAINER (80dp) circle
+              Image: LOGO_SIZE (64dp) — renders 192px at xxhdpi
+              512px source → 37% scale → very sharp ✅
+            */}
+            <View style={[
+              s.logoBg,
+              { width: IMG.LOGO_CONTAINER, height: IMG.LOGO_CONTAINER, borderRadius: IMG.LOGO_CONTAINER / 2 }
+            ]}>
+              <Image
+                source={ICONS.logo}
+                style={{ width: IMG.LOGO_SIZE, height: IMG.LOGO_SIZE }}
+                resizeMode="contain"
+              />
             </View>
-          ))}
-        </TouchableOpacity>
+            <Text style={s.title}>Verify OTP</Text>
+            <View style={s.phonePill}><Text style={s.phoneTxt}>📱 +91 {phone}</Text></View>
+            <Text style={s.subtitle}>Enter the 6-digit code sent to your number</Text>
+          </View>
 
-        <TextInput
-          ref={inputRef}
-          value={otp}
-          onChangeText={handleChange}
-          keyboardType="number-pad"
-          maxLength={6}
-          autoFocus
-          editable={!loading}
-          style={s.realInput}
-          caretHidden
-          selectTextOnFocus
-        />
+          <View style={s.card}>
+            <View style={s.handle} />
 
-        {error ? (
-          <View style={s.errBox}><Text style={s.errTxt}>⚠️  {error}</Text></View>
-        ) : (
-          <Text style={s.hint}>Auto-verifies when all 6 digits are entered</Text>
-        )}
+            {devOTP ? (
+              <View style={s.devBox}>
+                <Text style={s.devTitle}>🔑 Your OTP Code</Text>
+                <Text style={s.devCode}>{devOTP}</Text>
+                <Text style={s.devHint}>Enter the digits in the boxes below</Text>
+              </View>
+            ) : null}
 
-        <TouchableOpacity
-          style={[s.btn, (otp.length < 6 || loading) && s.btnOff]}
-          onPress={() => doVerify()}
-          disabled={otp.length < 6 || loading}
-          activeOpacity={0.88}
-        >
-          <LinearGradient
-            colors={otp.length === 6 && !loading ? ['#1C7C54', '#2E9E6B'] : ['#9CA3AF', '#9CA3AF']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={s.btnGrad}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.btnTxt}>✓  Verify & Continue</Text>
-            }
-          </LinearGradient>
-        </TouchableOpacity>
+            <Text style={s.fieldLabel}>Enter 6-digit OTP</Text>
 
-        <View style={s.resendRow}>
-          <Text style={s.resendTxt}>Didn't receive it?  </Text>
-          {timer > 0
-            ? <Text style={s.timerTxt}>Resend in {timer}s</Text>
-            : <TouchableOpacity onPress={() => navigation.goBack()}>
-                <Text style={s.resendLink}>← Go Back & Resend</Text>
+            {/* OTP: visual boxes + full-size transparent real input */}
+            <View style={[s.otpContainer, { height: BOX_H }]}>
+              <View style={s.boxRow} pointerEvents="none">
+                {[0,1,2,3,4,5].map(i => (
+                  <View key={i} style={[
+                    s.box, { width: BOX_W, height: BOX_H },
+                    otp.length === i && !loading && s.boxActive,
+                    otp.length > i  && s.boxFilled,
+                    !!error         && s.boxError,
+                  ]}>
+                    <Text style={s.boxTxt}>{otp[i] ?? ''}</Text>
+                  </View>
+                ))}
+              </View>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={focusInput} activeOpacity={1}>
+                <TextInput
+                  ref={inputRef}
+                  value={otp}
+                  onChangeText={handleChange}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  autoFocus
+                  editable={!loading}
+                  caretHidden
+                  style={s.realInput}
+                  underlineColorAndroid="transparent"
+                />
               </TouchableOpacity>
-          }
-        </View>
-      </View>
+            </View>
+
+            {error
+              ? <View style={s.errorBox}><Text style={s.errorTxt}>⚠️  {error}</Text></View>
+              : <Text style={s.hint}>Auto-verifies when all 6 digits are entered</Text>
+            }
+
+            <TouchableOpacity style={[s.btn, (otp.length < 6 || loading) && s.btnOff]} onPress={() => doVerify()} disabled={otp.length < 6 || loading} activeOpacity={0.88}>
+              {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.btnTxt}>✓  Verify & Continue</Text>}
+            </TouchableOpacity>
+
+            <View style={s.resendRow}>
+              <Text style={s.resendTxt}>Didn't receive it?  </Text>
+              {timer > 0
+                ? <Text style={s.timerTxt}>⏱ Resend in {timer}s</Text>
+                : <TouchableOpacity onPress={() => navigation.goBack()}><Text style={s.resendLink}>← Resend OTP</Text></TouchableOpacity>
+              }
+            </View>
+          </View>
+          <View style={{ height: 32 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe:       { flex: 1, backgroundColor: '#145A3E' },
-  header:     { paddingTop: 36, paddingBottom: 40, paddingHorizontal: 24, alignItems: 'center' },
-  iconBox:    { width: 72, height: 72, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  icon:       { fontSize: 36 },
-  title:      { fontSize: 26, fontWeight: '900', color: '#fff', marginBottom: 10 },
-  phonePill:  { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 7 },
-  phoneTxt:   { fontSize: 15, fontWeight: '700', color: '#fff' },
-  card:       { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingTop: 16 },
-  handle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 24 },
-  devBox:     { backgroundColor: '#ECFDF5', borderRadius: 16, padding: 18, alignItems: 'center', marginBottom: 20, borderWidth: 2, borderColor: '#6EE7B7' },
-  devTitle:   { fontSize: 14, fontWeight: '700', color: '#065F46', marginBottom: 8 },
-  devCode:    { fontSize: 40, fontWeight: '900', color: '#059669', letterSpacing: 10, marginBottom: 4 },
-  devHint:    { fontSize: 12, color: '#6B7280' },
-  label:      { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 16 },
-  boxRow:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  box:        { width: 46, height: 56, borderRadius: 12, borderWidth: 2, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center' },
-  boxActive:  { borderColor: COLORS.primary, backgroundColor: '#F0FDF7' },
-  boxFilled:  { borderColor: COLORS.primary, backgroundColor: '#ECFDF5' },
-  boxError:   { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
-  boxTxt:     { fontSize: 24, fontWeight: '900', color: '#111827' },
-  realInput:  { height: 48, borderWidth: 1.5, borderColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 16, fontSize: 24, fontWeight: '700', color: '#111827', letterSpacing: 12, backgroundColor: '#F0FDF7', marginBottom: 12, textAlign: 'center' },
-  hint:       { fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginBottom: 16 },
-  errBox:     { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, marginBottom: 12 },
-  errTxt:     { fontSize: 13, color: '#B91C1C', textAlign: 'center', fontWeight: '500' },
-  btn:        { borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
-  btnOff:     { opacity: 0.6 },
-  btnGrad:    { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
-  btnTxt:     { color: '#fff', fontSize: 17, fontWeight: '800' },
-  resendRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  resendTxt:  { fontSize: 13, color: '#6B7280' },
-  timerTxt:   { fontSize: 13, color: COLORS.primary, fontWeight: '700' },
-  resendLink: { fontSize: 13, color: COLORS.primary, fontWeight: '700' },
+  safe:         { flex: 1, backgroundColor: '#fff' },
+  kav:          { flex: 1 },
+  scroll:       { flexGrow: 1 },
+  backBtn:      { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center', marginHorizontal: 16, marginTop: 14, alignSelf: 'flex-start' },
+  topSection:   { alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20 },
+  logoBg:       { backgroundColor: '#E8F5EE', alignItems: 'center', justifyContent: 'center', marginBottom: 14, overflow: 'hidden' },
+  title:        { fontSize: rf(22), fontWeight: '900', color: '#111827', marginBottom: 8 },
+  phonePill:    { backgroundColor: '#F4F5F7', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 6 },
+  phoneTxt:     { fontSize: rf(13), fontWeight: '700', color: '#374151' },
+  subtitle:     { fontSize: rf(12), color: '#9CA3AF', textAlign: 'center' },
+  card:         { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
+  handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 18 },
+  devBox:       { backgroundColor: '#E8F5EE', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#6EE7B7', marginBottom: 18, alignItems: 'center' },
+  devTitle:     { fontSize: rf(12), fontWeight: '700', color: '#065F46', marginBottom: 4 },
+  devCode:      { fontSize: rf(28), fontWeight: '900', color: PRIMARY, letterSpacing: 8 },
+  devHint:      { fontSize: rf(11), color: '#6B7280', marginTop: 2 },
+  fieldLabel:   { fontSize: rf(14), fontWeight: '700', color: '#374151', marginBottom: 16 },
+  otpContainer: { width: '100%', marginBottom: 12, position: 'relative' },
+  boxRow:       { flexDirection: 'row', justifyContent: 'space-between', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  box:          { borderRadius: 14, borderWidth: 2, borderColor: '#E5E7EB', backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center' },
+  boxActive:    { borderColor: PRIMARY, backgroundColor: '#F0FDF7' },
+  boxFilled:    { borderColor: PRIMARY, backgroundColor: '#E8F5EE' },
+  boxError:     { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
+  boxTxt:       { fontSize: rf(22), fontWeight: '900', color: '#111827' },
+  realInput:    { flex: 1, opacity: 0, color: 'transparent' },
+  errorBox:     { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, marginBottom: 12 },
+  errorTxt:     { fontSize: rf(12), color: '#B91C1C', fontWeight: '500', textAlign: 'center' },
+  hint:         { fontSize: rf(12), color: '#9CA3AF', textAlign: 'center', marginBottom: 18 },
+  btn:          { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginBottom: 16 },
+  btnOff:       { backgroundColor: '#D1D5DB' },
+  btnTxt:       { color: '#fff', fontSize: rf(15), fontWeight: '800' },
+  resendRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingBottom: 10 },
+  resendTxt:    { fontSize: rf(13), color: '#6B7280' },
+  timerTxt:     { fontSize: rf(13), color: PRIMARY, fontWeight: '700' },
+  resendLink:   { fontSize: rf(13), color: PRIMARY, fontWeight: '700' },
 });

@@ -1,13 +1,15 @@
+// src/farmer/screens/LocationSelect.js
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, ScrollView, Alert, TextInput,
-  StatusBar, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
+  ScrollView, Alert, TextInput, StatusBar, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { LinearGradient }    from 'expo-linear-gradient';
 import { useUser }           from '../../../context/UserContext';
 import { updateUser }        from '../../../firebase/firestore';
 import { COLORS }            from '../../../constants/colors';
+import { rs, rf, H_PAD }     from '../../../utils/responsive';
+import { FIcon, IIcon }      from '../../../utils/icons';
 import DistrictTalukPicker   from '../../common/components/DistrictTalukPicker';
 
 export default function LocationSelect({ navigation }) {
@@ -30,90 +32,89 @@ export default function LocationSelect({ navigation }) {
       navigation.navigate('Category');
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not save. Try again.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#145A3E" />
-      <LinearGradient colors={['#145A3E', '#1C7C54', '#2E9E6B']} style={s.header}>
-        <View style={s.iconBox}><Text style={{ fontSize: 36 }}>📍</Text></View>
-        <Text style={s.headerTitle}>Your Location</Text>
-        <Text style={s.headerSub}>We Show Machines Available in Your Taluk</Text>
-      </LinearGradient>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      <ScrollView style={s.form} contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={s.handle} />
+      {/* Header */}
+      <View style={s.header}>
+        <View style={s.iconCircle}>
+          <IIcon name="location" size={28} color={COLORS.primary} fallback="📍" />
+        </View>
+        <Text style={s.title}>Your Location</Text>
+        <Text style={s.subtitle}>We show machines available in your taluk</Text>
+      </View>
 
-        {userProfile?.taluk ? (
-          <View style={s.currentBox}>
-            <Text style={s.currentLabel}>Current Location</Text>
-            <View style={s.currentRow}>
-              <Text style={{ fontSize: 16 }}>📍</Text>
-              <Text style={s.currentTxt}> {userProfile.taluk}, {userProfile.district}</Text>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView style={s.form} contentContainerStyle={s.formContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={s.handle} />
+
+          {userProfile?.taluk && (
+            <View style={s.currentBox}>
+              <Text style={s.currentLabel}>Current Location</Text>
+              <Text style={s.currentTxt}>📍 {userProfile.taluk}, {userProfile.district}</Text>
+            </View>
+          )}
+
+          {/* State — static */}
+          <View style={s.fieldGroup}>
+            <Text style={s.fieldLabel}>🏛️ State</Text>
+            <View style={s.staticBox}>
+              <Text style={s.staticTxt}>Tamil Nadu</Text>
+              <Text style={{ color: COLORS.primary, fontSize: rf(18) }}>✓</Text>
             </View>
           </View>
-        ) : null}
 
-        <View style={s.fieldGroup}>
-          <View style={s.labelRow}>
-            <Text style={s.labelIcon}>🏛️</Text>
-            <Text style={s.labelTxt}> State</Text>
-          </View>
-          <View style={s.staticBox}>
-            <Text style={s.staticTxt}>Tamil Nadu</Text>
-            <Text style={s.staticCheck}>✓</Text>
-          </View>
-        </View>
+          <DistrictTalukPicker district={district} taluk={taluk} onDistrictChange={setDistrict} onTalukChange={setTaluk} />
 
-        <DistrictTalukPicker district={district} taluk={taluk} onDistrictChange={setDistrict} onTalukChange={setTaluk} />
-
-        <View style={s.fieldGroup}>
-          <View style={s.labelRow}>
-            <Text style={s.labelIcon}>🏘️</Text>
-            <Text style={s.labelTxt}> Village <Text style={s.opt}>(optional)</Text></Text>
+          <View style={s.fieldGroup}>
+            <Text style={s.fieldLabel}>🏘️ Village <Text style={s.opt}>(optional)</Text></Text>
+            <View style={s.inputWrap}>
+              <TextInput style={s.input} value={village} onChangeText={setVillage} placeholder="e.g. Kolathur" placeholderTextColor="#C9D1DA" />
+            </View>
           </View>
-          <View style={s.inputWrap}>
-            <TextInput style={s.input} value={village} onChangeText={setVillage} placeholder="e.g. Kolathur" placeholderTextColor="#C9D1DA" />
-          </View>
-        </View>
 
-        <TouchableOpacity style={[s.btn, loading && s.btnOff]} onPress={handleSave} disabled={loading} activeOpacity={0.88}>
-          <LinearGradient colors={loading ? ['#D1D5DB','#D1D5DB'] : ['#1C7C54','#2E9E6B']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.btnGradient}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnTxt}>Find Machines in My Taluk  →</Text>}
-          </LinearGradient>
-        </TouchableOpacity>
-      </ScrollView>
+          <View style={s.infoBox}>
+            <FIcon name="info" size={15} color={COLORS.primary} fallback="ℹ️" style={{ marginRight: rs(8) }} />
+            <Text style={s.infoTxt}>Machines near your taluk will appear in results</Text>
+          </View>
+
+          <TouchableOpacity style={[s.btn, loading && { opacity: 0.7 }]} onPress={handleSave} disabled={loading} activeOpacity={0.88}>
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={s.btnTxt}>Find Machines in My Taluk →</Text>
+            }
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe:         { flex: 1, backgroundColor: '#145A3E' },
-  header:       { paddingTop: 32, paddingBottom: 28, paddingHorizontal: 24, alignItems: 'center' },
-  iconBox:      { width: 66, height: 66, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  headerTitle:  { fontSize: 24, fontWeight: '900', color: '#fff' },
-  headerSub:    { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-  form:         { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12 },
-  handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 24 },
-  currentBox:   { backgroundColor: '#ECFDF5', borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1.5, borderColor: '#6EE7B7' },
-  currentLabel: { fontSize: 12, color: '#6B7280', marginBottom: 6 },
-  currentRow:   { flexDirection: 'row', alignItems: 'center' },
-  currentTxt:   { fontSize: 15, fontWeight: '700', color: '#065F46' },
-  fieldGroup:   { marginBottom: 16 },
-  labelRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  labelIcon:    { fontSize: 18 },
-  labelTxt:     { fontSize: 14, fontWeight: '700', color: '#374151' },
-  opt:          { fontSize: 12, color: '#9CA3AF', fontWeight: '400' },
-  staticBox:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F9FAFB', borderRadius: 14, borderWidth: 2, borderColor: '#E5E7EB', paddingHorizontal: 16, paddingVertical: 14 },
-  staticTxt:    { fontSize: 15, fontWeight: '700', color: '#111827' },
-  staticCheck:  { fontSize: 18, color: COLORS.primary },
-  inputWrap:    { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, borderWidth: 2, borderColor: '#E5E7EB', paddingHorizontal: 16 },
-  input:        { flex: 1, paddingVertical: 14, fontSize: 15, color: '#111827' },
-  btn:          { borderRadius: 16, overflow: 'hidden', marginTop: 8 },
-  btnOff:       { opacity: 0.7 },
-  btnGradient:  { alignItems: 'center', justifyContent: 'center', paddingVertical: 17 },
-  btnTxt:       { color: '#fff', fontSize: 16, fontWeight: '800' },
+  safe:         { flex: 1, backgroundColor: '#fff' },
+  header:       { alignItems: 'center', paddingTop: rs(24), paddingBottom: rs(20), paddingHorizontal: H_PAD, backgroundColor: '#fff' },
+  iconCircle:   { width: rs(64), height: rs(64), borderRadius: rs(32), backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: rs(12) },
+  title:        { fontSize: rf(22), fontWeight: '900', color: '#111827', marginBottom: rs(6) },
+  subtitle:     { fontSize: rf(13), color: COLORS.textSecondary, textAlign: 'center' },
+  form:         { flex: 1, backgroundColor: '#F9FAFB', borderTopLeftRadius: rs(24), borderTopRightRadius: rs(24), paddingHorizontal: H_PAD, paddingTop: rs(12) },
+  formContent:  { paddingBottom: rs(60), flexGrow: 1 },
+  handle:       { width: rs(40), height: rs(4), borderRadius: rs(2), backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: rs(24) },
+  currentBox:   { backgroundColor: COLORS.primaryLight, borderRadius: rs(14), padding: rs(14), marginBottom: rs(20), borderWidth: rs(1.5), borderColor: '#6EE7B7' },
+  currentLabel: { fontSize: rf(12), color: COLORS.textSecondary, marginBottom: rs(4) },
+  currentTxt:   { fontSize: rf(15), fontWeight: '700', color: COLORS.primaryDark },
+  fieldGroup:   { marginBottom: rs(16) },
+  fieldLabel:   { fontSize: rf(13), fontWeight: '700', color: '#374151', marginBottom: rs(8) },
+  opt:          { fontSize: rf(12), color: COLORS.textSecondary, fontWeight: '400' },
+  staticBox:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: rs(12), borderWidth: rs(2), borderColor: COLORS.border, paddingHorizontal: rs(16), paddingVertical: rs(14) },
+  staticTxt:    { fontSize: rf(15), fontWeight: '700', color: '#111827' },
+  inputWrap:    { backgroundColor: '#fff', borderRadius: rs(12), borderWidth: rs(2), borderColor: COLORS.border },
+  input:        { paddingVertical: rs(13), paddingHorizontal: rs(16), fontSize: rf(15), color: '#111827' },
+  infoBox:      { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight, borderRadius: rs(12), padding: rs(12), marginBottom: rs(20) },
+  infoTxt:      { fontSize: rf(13), color: COLORS.primaryDark, fontWeight: '600' },
+  btn:          { backgroundColor: COLORS.primary, borderRadius: rs(14), paddingVertical: rs(15), alignItems: 'center' },
+  btnTxt:       { color: '#fff', fontSize: rf(15), fontWeight: '800' },
 });

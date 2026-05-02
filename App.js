@@ -1,46 +1,68 @@
 // App.js
-//
-// MAINTENANCE MODE LOGIC:
-// ─────────────────────────────────────────────────────────────────────────
-//  App starts → listens to Firestore: appConfig/maintenance in real-time
-//  isUnderMaintenance = true  → MaintenanceScreen shown to ALL users
-//  isUnderMaintenance = false → App works normally
-//
-//  Admin toggles from Firebase Console:
-//    Collection: appConfig | Document: maintenance
-//    Set field:  isUnderMaintenance = true   (LOCK all users)
-//    Set field:  isUnderMaintenance = false  (RESTORE app)
-//    Optional:   message = "We are upgrading the server. Back in 30 mins!"
-//
-//  Crash protection:
-//    ErrorBoundary catches any JS crash → shows "Namma Vayal" maintenance screen
-//    Users never see a blank white crash screen
-// ─────────────────────────────────────────────────────────────────────────
-
 import React, { Component, useState, useEffect } from 'react';
 import {
-  Text, TouchableOpacity, ScrollView,
-  StyleSheet, View, ActivityIndicator,
+  Text, StyleSheet, View, ActivityIndicator,
 } from 'react-native';
 import { StatusBar }              from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider }       from 'react-native-safe-area-context';
-import { AuthProvider }           from './context/AuthContext';
-import { UserProvider }           from './context/UserContext';
-import { BookingProvider }        from './context/BookingContext';
-import AppNavigator               from './navigation/AppNavigator';
-import MaintenanceScreen          from './src/common/screens/MaintenanceScreen';
+import * as Font                  from 'expo-font';
+import * as SplashScreen          from 'expo-splash-screen';
+
+import { AuthProvider }            from './context/AuthContext';
+import { UserProvider }            from './context/UserContext';
+import { BookingProvider }         from './context/BookingContext';
+import AppNavigator                from './navigation/AppNavigator';
+import MaintenanceScreen           from './src/common/screens/MaintenanceScreen';
 import { listenMaintenanceStatus } from './firebase/firestore';
+import { useNetworkStatus }        from './utils/network';
 
-// ── Error Boundary ────────────────────────────────────────────────────────────
-// Catches any JS crash in the component tree.
-// Shows "Namma Vayal — Under Maintenance" instead of blank white screen.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// ── Icon fonts map ─────────────────────────────────────────────────────────────
+const ICON_FONTS = {
+  'Feather':                require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Feather.ttf'),
+  'Ionicons':               require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf'),
+  'MaterialIcons':          require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf'),
+  'MaterialCommunityIcons': require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf'),
+};
+
+// ── Offline Banner ─────────────────────────────────────────────────────────────
+// Shown at top of app when no internet connection
+// Disappears automatically when connection restores
+function OfflineBanner() {
+  const isConnected = useNetworkStatus();
+  if (isConnected) return null;
+  return (
+    <View style={ob.banner}>
+      <Text style={ob.bannerTxt}>
+        📶 No internet connection · App works offline · Data will sync when connected
+      </Text>
+    </View>
+  );
+}
+
+const ob = StyleSheet.create({
+  banner: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  bannerTxt: {
+    fontSize: 11,
+    color: '#fff',
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+});
+
+// ── Error Boundary ─────────────────────────────────────────────────────────────
 class ErrorBoundary extends Component {
-  state = { hasError: false, error: null };
+  state = { hasError: false };
 
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
+  static getDerivedStateFromError() { return { hasError: true }; }
 
   componentDidCatch(error, info) {
     console.error('[NammaVayal] CRASH:', error.message);
@@ -53,8 +75,7 @@ class ErrorBoundary extends Component {
         <MaintenanceScreen
           message={
             'Namma Vayal experienced an unexpected error.\n' +
-            'Our team has been notified and is working on a fix.\n\n' +
-            'Please wait — the app will restore automatically.'
+            'Please restart the app.'
           }
         />
       );
@@ -63,25 +84,21 @@ class ErrorBoundary extends Component {
   }
 }
 
-// ── Maintenance Gate ──────────────────────────────────────────────────────────
-// Listens to Firestore in real-time.
-// If maintenance mode ON → wraps children with MaintenanceScreen.
+// ── Maintenance Gate ────────────────────────────────────────────────────────────
 function MaintenanceGate({ children }) {
-  const [checking,     setChecking]     = useState(true);  // initial load
+  const [checking,      setChecking]    = useState(true);
   const [isMaintenance, setMaintenance] = useState(false);
   const [message,       setMessage]     = useState(null);
 
   useEffect(() => {
-    // Real-time listener — fires instantly when admin toggles maintenance
     const unsub = listenMaintenanceStatus(({ isUnderMaintenance, message: msg }) => {
       setMaintenance(isUnderMaintenance);
       setMessage(msg);
       setChecking(false);
     });
-    return unsub; // cleanup on unmount
+    return unsub;
   }, []);
 
-  // Show loading spinner only on very first check (< 1 second usually)
   if (checking) {
     return (
       <View style={ls.loadWrap}>
@@ -92,12 +109,7 @@ function MaintenanceGate({ children }) {
     );
   }
 
-  // Maintenance ON → show maintenance screen to ALL users (farmer/owner/admin)
-  if (isMaintenance) {
-    return <MaintenanceScreen message={message} />;
-  }
-
-  // Normal → show the app
+  if (isMaintenance) return <MaintenanceScreen message={message} />;
   return children;
 }
 
@@ -107,14 +119,40 @@ const ls = StyleSheet.create({
   loadAppName: { fontSize: 22, fontWeight: '900', color: '#1C7C54', letterSpacing: 1 },
 });
 
-// ── Root App ──────────────────────────────────────────────────────────────────
+// ── Root App ────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+
+  useEffect(() => {
+    async function loadFonts() {
+      try {
+        await Font.loadAsync(ICON_FONTS);
+      } catch (e) {
+        console.warn('[NammaVayal] Font load warning:', e.message);
+      } finally {
+        setFontsLoaded(true);
+        await SplashScreen.hideAsync().catch(() => {});
+      }
+    }
+    loadFonts();
+  }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={ls.loadWrap}>
+        <Text style={ls.loadIcon}>🌾</Text>
+        <Text style={ls.loadAppName}>Namma Vayal</Text>
+        <ActivityIndicator color="#1C7C54" size="large" style={{ marginTop: 16 }} />
+      </View>
+    );
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        {/* ErrorBoundary: catches crashes → shows maintenance UI */}
+        {/* Offline banner — shows automatically when no internet */}
+        <OfflineBanner />
         <ErrorBoundary>
-          {/* MaintenanceGate: listens Firestore → blocks all screens if needed */}
           <MaintenanceGate>
             <AuthProvider>
               <UserProvider>
