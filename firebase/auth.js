@@ -1,17 +1,8 @@
 // firebase/auth.js
-// ─────────────────────────────────────────────────────────────────────────────
-// FIX: Removed signInAnonymously — it requires "Anonymous" auth provider
-// to be enabled in Firebase Console. If not enabled → auth/operation-not-allowed
-// error which breaks Firestore connection.
-//
-// We use phone-derived stable UIDs stored in AsyncStorage instead.
-// This is simpler, faster, and works without any Firebase Auth config.
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { signOut }                     from 'firebase/auth';
+import { signOut, signInAnonymously } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import AsyncStorage                    from '@react-native-async-storage/async-storage';
-import { getFirebaseAuth, db }         from './config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFirebaseAuth, db } from './config';
 
 const KEY_UID   = '@vayal_uid';
 const KEY_PHONE = '@vayal_phone';
@@ -27,15 +18,14 @@ const makeOTP = () =>
 export const sendOTP = async (phoneNumber) => {
   _phone  = phoneNumber;
   _otp    = makeOTP();
-  _expiry = Date.now() + 10 * 60 * 1000; // 10 min
+  _expiry = Date.now() + 10 * 60 * 1000;
 
-  // Try to save OTP to Firestore (non-blocking — ok if offline)
+  // Save OTP to Firestore (non-blocking)
   setDoc(doc(db, 'otpSessions', phoneNumber.replace(/\+/g, '')), {
     otp: _otp, phone: phoneNumber,
     expiresAt: _expiry, createdAt: serverTimestamp(),
   }).catch(() => {});
 
-  // OTP shown in Metro console during development
   console.log('\n============================');
   console.log('📱 OTP:', _otp, '| Phone:', phoneNumber);
   console.log('============================\n');
@@ -50,17 +40,21 @@ export const verifyOTP = async (inputOTP) => {
   if (inputOTP.trim() !== _otp) throw new Error('Wrong OTP. Try again.');
 
   const phone = _phone;
-  // Stable phone-based UID: same user always same UID, survives reinstall
   const uid   = 'p' + phone.replace(/\D/g, '');
 
-  // Save to AsyncStorage — works fully offline
+  // ── KEY FIX: Sign in anonymously so request.auth != null ─────────────
+  // This makes Firestore rules work — request.auth.uid = Firebase UID
+  try {
+    const auth = getFirebaseAuth();
+    await signInAnonymously(auth);
+  } catch (e) {
+    console.warn('Anonymous auth failed:', e.message);
+    // Continue anyway — Firestore rules must be open (allow read, write: if true)
+  }
+
   await AsyncStorage.multiSet([[KEY_UID, uid], [KEY_PHONE, phone]]);
 
-  // Clear OTP state
   _otp = _phone = _expiry = null;
-
-  // Clean up session doc (non-blocking)
-  doc(db, 'otpSessions', phone.replace(/\+/g, ''));
 
   return { uid, phoneNumber: phone };
 };
@@ -72,7 +66,7 @@ export const logout = async () => {
   try { await signOut(getFirebaseAuth()); } catch {}
 };
 
-// ── Get stored user (used on app boot) ───────────────────────────────────
+// ── Get stored user ───────────────────────────────────────────────────────
 export const getStoredUser = async () => {
   try {
     const [[, uid], [, phone]] = await AsyncStorage.multiGet([KEY_UID, KEY_PHONE]);
