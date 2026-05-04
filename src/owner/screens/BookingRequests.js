@@ -1,515 +1,427 @@
-import React, { useEffect, useState, useRef } from 'react';
+// src/owner/screens/BookingRequests.js
+// Swipe LEFT on any card to reveal red Delete button
+// Delete disabled if: status == 'completed' | 'ongoing' | paymentStatus == 'paid'
+
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView,
   FlatList, TouchableOpacity, Alert,
-  RefreshControl, ScrollView,
+  RefreshControl, ScrollView, Animated,
 } from 'react-native';
+import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { doc, deleteDoc }                    from 'firebase/firestore';
+import { db }                                from '../../../firebase/config';
 import { listenBookingsByOwner, updateBooking, getUser } from '../../../firebase/firestore';
 import { useUser }          from '../../../context/UserContext';
 import { getCategoryLabel } from '../../../constants/categories';
 import PhoneConnect         from '../../common/components/PhoneConnect';
 import Loader               from '../../common/components/Loader';
 import { COLORS }           from '../../../constants/colors';
+import { rs, rf }           from '../../../utils/responsive';
 
-// ─── Filter tabs ──────────────────────────────────────────────────────────────
+// ── Filter tabs ───────────────────────────────────────────────────────────────
 const TABS = [
-  { key: 'all',       label: 'ALL'       },
-  { key: 'pending',   label: 'PENDING'   },
-  { key: 'accepted',  label: 'ACCEPTED'  },
-  { key: 'ongoing',   label: 'ONGOING'   },
-  { key: 'completed', label: 'DONE'      },
-  { key: 'rejected',  label: 'REJECTED'  },
+  { key: 'all',       label: 'ALL'      },
+  { key: 'pending',   label: 'PENDING'  },
+  { key: 'accepted',  label: 'ACCEPTED' },
+  { key: 'ongoing',   label: 'ONGOING'  },
+  { key: 'completed', label: 'DONE'     },
+  { key: 'rejected',  label: 'REJECTED' },
 ];
 
-// ─── Status visual config ─────────────────────────────────────────────────────
+// ── Status colours ────────────────────────────────────────────────────────────
 const STATUS = {
-  pending:   { bg: '#FFF9E6', badge: '#F59E0B', text: '#92400E', dot: '#F59E0B', label: 'PENDING'   },
-  accepted:  { bg: '#ECFDF5', badge: '#1C7C54', text: '#065F46', dot: '#22C55E', label: 'ACCEPTED'  },
-  ongoing:   { bg: '#EFF6FF', badge: '#3B82F6', text: '#1D4ED8', dot: '#3B82F6', label: 'ONGOING'   },
-  completed: { bg: '#F0FDF4', badge: '#22C55E', text: '#166534', dot: '#22C55E', label: 'DONE'       },
-  rejected:  { bg: '#FEF2F2', badge: '#EF4444', text: '#991B1B', dot: '#EF4444', label: 'REJECTED'  },
+  pending:   { bg: '#FFF9E6', dot: '#F59E0B', text: '#92400E', label: 'PENDING'  },
+  accepted:  { bg: '#ECFDF5', dot: '#22C55E', text: '#065F46', label: 'ACCEPTED' },
+  ongoing:   { bg: '#EFF6FF', dot: '#3B82F6', text: '#1D4ED8', label: 'ONGOING'  },
+  completed: { bg: '#F0FDF4', dot: '#22C55E', text: '#166534', label: 'DONE'     },
+  rejected:  { bg: '#FEF2F2', dot: '#EF4444', text: '#991B1B', label: 'REJECTED' },
 };
-const fallbackStatus = { bg: '#F4F6F8', badge: '#9CA3AF', text: '#374151', dot: '#9CA3AF', label: '—' };
+const FB = { bg: '#F4F6F8', dot: '#9CA3AF', text: '#374151', label: '—' };
 
+// ── Can this booking be deleted? ──────────────────────────────────────────────
+function canDelete(item, ownerId) {
+  if (item.ownerId !== ownerId)           return false; // only own bookings
+  if (item.status === 'completed')        return false; // job done
+  if (item.status === 'ongoing')          return false; // work in progress
+  if (item.paymentStatus === 'paid')      return false; // commission paid
+  return true;
+}
+
+// ── Swipeable delete action panel ─────────────────────────────────────────────
+function DeleteAction({ progress, onPress }) {
+  const trans = progress.interpolate({
+    inputRange: [0, 1], outputRange: [rs(88), 0], extrapolate: 'clamp',
+  });
+  return (
+    <Animated.View style={[sa.actionWrap, { transform: [{ translateX: trans }] }]}>
+      <TouchableOpacity style={sa.deleteBtn} onPress={onPress} activeOpacity={0.82}>
+        <Text style={sa.trashIcon}>🗑</Text>
+        <Text style={sa.deleteTxt}>Delete</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ── Single swipeable booking card ─────────────────────────────────────────────
+function BookingCard({ item, ownerId, expanded, onToggle, onDeleted, onAccept, onReject, navigation, actioning, openSwipeRef }) {
+  const swipeRef  = useRef(null);
+  const st        = STATUS[item.status] || FB;
+  const isExpanded = expanded === item.id;
+  const deletable  = canDelete(item, ownerId);
+  const displayType = item.machineTypeLabel || getCategoryLabel(item.machineType);
+
+  const closeSwipe = () => swipeRef.current?.close();
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Booking',
+      'Are you sure you want to delete this booking?',
+      [
+        { text: 'No',         style: 'cancel',      onPress: closeSwipe },
+        { text: 'Yes, Delete',style: 'destructive', onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'bookings', item.id));
+              onDeleted(item.id);
+            } catch (e) {
+              Alert.alert('Error', e.message || 'Could not delete.');
+            }
+          },
+        },
+      ],
+      { cancelable: true, onDismiss: closeSwipe }
+    );
+  };
+
+  const renderRight = (progress) =>
+    deletable ? <DeleteAction progress={progress} onPress={handleDelete} /> : null;
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      friction={2}
+      rightThreshold={rs(40)}
+      renderRightActions={renderRight}
+      overshootRight={false}
+      onSwipeableOpen={() => {
+        // close any previously open swipe
+        if (openSwipeRef.current && openSwipeRef.current !== swipeRef.current) {
+          openSwipeRef.current.close();
+        }
+        openSwipeRef.current = swipeRef.current;
+      }}
+    >
+      <View style={[s.card, { borderLeftColor: st.dot }]}>
+
+        {/* ── Tappable header ── */}
+        <TouchableOpacity
+          style={s.cardTouch}
+          onPress={() => onToggle(item.id)}
+          activeOpacity={0.85}
+        >
+          <View style={s.cardHeader}>
+            <View style={[s.avatar, { backgroundColor: st.bg }]}>
+              <Text style={s.avatarTxt}>👨‍🌾</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.farmerName} numberOfLines={1}>{item.farmerName || 'Farmer'}</Text>
+              {item.farmerPhone
+                ? <Text style={s.farmerPhone}>📞 +91 {item.farmerPhone}</Text>
+                : null}
+            </View>
+            <View style={[s.statusBadge, { backgroundColor: st.bg }]}>
+              <View style={[s.statusDot, { backgroundColor: st.dot }]} />
+              <Text style={[s.statusTxt, { color: st.text }]}>{st.label}</Text>
+            </View>
+          </View>
+
+          <View style={s.chipsRow}>
+            {[`🚜 ${displayType}`, `📅 ${item.date}`, `⏰ ${item.timeSlot}`, `🌾 ${item.hectareRequested} ha`].map(c => (
+              <View key={c} style={s.chip}><Text style={s.chipTxt}>{c}</Text></View>
+            ))}
+          </View>
+
+          <View style={s.hintRow}>
+            <Text style={s.hint}>{isExpanded ? '▲ Collapse' : '▼ Actions & Contact'}</Text>
+            {deletable && <Text style={s.swipeHint}>← Swipe to delete</Text>}
+          </View>
+        </TouchableOpacity>
+
+        {/* ── Expanded section ── */}
+        {isExpanded && (
+          <View style={s.expanded}>
+            {item.farmerPhone
+              ? <PhoneConnect phone={item.farmerPhone} name={item.farmerName || 'Farmer'} role="Farmer 👨‍🌾" />
+              : <View style={s.noPhone}><Text style={s.noPhoneTxt}>📵 Farmer phone not available</Text></View>
+            }
+
+            {item.status === 'pending' && (
+              <View style={s.actionRow}>
+                <TouchableOpacity
+                  style={[s.acceptBtn, actioning === item.id && s.btnDim]}
+                  onPress={() => onAccept(item)}
+                  disabled={actioning === item.id}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.acceptTxt}>{actioning === item.id ? 'Processing…' : '✅  ACCEPT'}</Text>
+                </TouchableOpacity>
+                <View style={{ width: rs(10) }} />
+                <TouchableOpacity
+                  style={[s.rejectBtn, actioning === item.id && s.btnDim]}
+                  onPress={() => onReject(item)}
+                  disabled={actioning === item.id}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.rejectTxt}>❌  REJECT</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {item.status === 'accepted' && (
+              <TouchableOpacity style={s.startBtn} onPress={() => navigation.navigate('WorkStartOTP', { booking: item })} activeOpacity={0.85}>
+                <Text style={s.startTxt}>🔐  ENTER OTP & START WORK</Text>
+              </TouchableOpacity>
+            )}
+            {item.status === 'ongoing' && (
+              <TouchableOpacity style={s.ongoingBtn} onPress={() => navigation.navigate('WorkInProgress', { booking: item })} activeOpacity={0.85}>
+                <Text style={s.ongoingTxt}>⚙️  WORK IN PROGRESS →</Text>
+              </TouchableOpacity>
+            )}
+            {item.status === 'completed' && (
+              <View style={s.doneBox}>
+                <Text style={s.doneTxt}>✅ Work Done: {item.hectareCompleted || 0} ha · Commission: Rs.{item.commission || 0}</Text>
+              </View>
+            )}
+            {item.status === 'rejected' && (
+              <View style={s.rejBox}><Text style={s.rejTxt}>❌ Booking was rejected.</Text></View>
+            )}
+          </View>
+        )}
+      </View>
+    </Swipeable>
+  );
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 export default function BookingRequests({ navigation }) {
-  const { userProfile }           = useUser();
-  const uid                       = userProfile?.id || '';
-
+  const { userProfile }               = useUser();
+  const uid                           = userProfile?.id || '';
   const [allBookings, setAllBookings] = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState('');
   const [expanded,    setExpanded]    = useState(null);
   const [activeTab,   setActiveTab]   = useState('all');
   const [refreshing,  setRefreshing]  = useState(false);
-  const [actioning,   setActioning]   = useState(null); // booking id currently being updated
+  const [actioning,   setActioning]   = useState(null);
+  const alive        = useRef(true);
+  const openSwipeRef = useRef(null);   // tracks currently open swipe row
 
-  // prevent setState after unmount
-  const alive = useRef(true);
-  useEffect(() => { return () => { alive.current = false; }; }, []);
+  useEffect(() => () => { alive.current = false; }, []);
 
-  // ── Firestore real-time listener ─────────────────────────────────────────
   useEffect(() => {
-    if (!uid) {
-      setError('Not logged in. Please restart the app.');
-      setLoading(false);
-      return;
-    }
-
+    if (!uid) { setError('Not logged in.'); setLoading(false); return; }
     setLoading(true);
-    setError('');
-
-    const unsub = listenBookingsByOwner(
-      uid,
-      async (rawData) => {
-        try {
-          // Enrich missing farmerPhone from users collection
-          const enriched = await Promise.all(
-            rawData.map(async (b) => {
-              if (!b.farmerPhone && b.farmerId) {
-                const farmer = await getUser(b.farmerId).catch(() => null);
-                return {
-                  ...b,
-                  farmerPhone: farmer?.phone || '',
-                  farmerName:  farmer?.name  || b.farmerName || 'Farmer',
-                };
-              }
-              return b;
-            })
-          );
-
-          if (!alive.current) return;
-
-          // Sort: newest first
-          const sorted = enriched.sort(
-            (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-          );
-
-          setAllBookings(sorted);
-          setError('');
-        } catch (e) {
-          if (alive.current) setError('Failed to load bookings: ' + (e.message || ''));
-        } finally {
-          if (alive.current) { setLoading(false); setRefreshing(false); }
-        }
-      },
-      (e) => {
+    const unsub = listenBookingsByOwner(uid, async (raw) => {
+      try {
+        const enriched = await Promise.all(raw.map(async b => {
+          if (!b.farmerPhone && b.farmerId) {
+            const f = await getUser(b.farmerId).catch(() => null);
+            return { ...b, farmerPhone: f?.phone || '', farmerName: f?.name || b.farmerName || 'Farmer' };
+          }
+          return b;
+        }));
         if (!alive.current) return;
-        setError('Connection error: ' + (e?.message || 'Please check your internet.'));
-        setLoading(false);
-        setRefreshing(false);
-      }
-    );
-
+        setAllBookings(enriched.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+        setError('');
+      } catch (e) { if (alive.current) setError(e.message || 'Load error'); }
+      finally     { if (alive.current) { setLoading(false); setRefreshing(false); } }
+    }, (e) => {
+      if (!alive.current) return;
+      setError(e?.message || 'Connection error');
+      setLoading(false); setRefreshing(false);
+    });
     return unsub;
   }, [uid]);
 
-  // ── Filter by active tab ──────────────────────────────────────────────────
-  const bookings = activeTab === 'all'
-    ? allBookings
-    : allBookings.filter(b => b.status === activeTab);
+  const handleDeleted = useCallback((id) => {
+    setAllBookings(prev => prev.filter(b => b.id !== id));
+    if (expanded === id) setExpanded(null);
+  }, [expanded]);
 
-  // ── Count per tab for badges ──────────────────────────────────────────────
-  const count = (key) => key === 'all'
-    ? allBookings.length
-    : allBookings.filter(b => b.status === key).length;
-
-  // ── Actions ───────────────────────────────────────────────────────────────
   const handleAccept = (booking) => {
-    Alert.alert(
-      '✅ Accept Booking?',
-      `Accept request from ${booking.farmerName || 'Farmer'}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept',
-          onPress: async () => {
-            setActioning(booking.id);
-            try {
-              await updateBooking(booking.id, { status: 'accepted' });
-              Alert.alert('✅ Accepted', 'Farmer has been notified. Show up at the field!');
-            } catch (e) {
-              Alert.alert('Error', e.message || 'Could not accept. Try again.');
-            } finally {
-              if (alive.current) setActioning(null);
-            }
-          },
+    Alert.alert('Accept Booking?', `Accept request from ${booking.farmerName || 'Farmer'}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Accept', onPress: async () => {
+          setActioning(booking.id);
+          try { await updateBooking(booking.id, { status: 'accepted' }); }
+          catch (e) { Alert.alert('Error', e.message); }
+          finally { if (alive.current) setActioning(null); }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleReject = (booking) => {
-    Alert.alert(
-      '❌ Reject Booking?',
-      `Reject request from ${booking.farmerName || 'Farmer'}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async () => {
-            setActioning(booking.id);
-            try {
-              await updateBooking(booking.id, { status: 'rejected' });
-            } catch (e) {
-              Alert.alert('Error', e.message || 'Could not reject. Try again.');
-            } finally {
-              if (alive.current) setActioning(null);
-            }
-          },
+    Alert.alert('Reject Booking?', `Reject request from ${booking.farmerName || 'Farmer'}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reject', style: 'destructive', onPress: async () => {
+          setActioning(booking.id);
+          try { await updateBooking(booking.id, { status: 'rejected' }); }
+          catch (e) { Alert.alert('Error', e.message); }
+          finally { if (alive.current) setActioning(null); }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  // ── Loading / Error states ────────────────────────────────────────────────
+  const bookings = activeTab === 'all' ? allBookings : allBookings.filter(b => b.status === activeTab);
+  const count    = (k) => k === 'all' ? allBookings.length : allBookings.filter(b => b.status === k).length;
+
   if (loading) return <Loader />;
-
-  if (error) {
-    return (
-      <SafeAreaView style={s.safe}>
-        <View style={s.errorBox}>
-          <Text style={s.errorIcon}>⚠️</Text>
-          <Text style={s.errorTitle}>Something went wrong</Text>
-          <Text style={s.errorMsg}>{error}</Text>
-          <TouchableOpacity
-            style={s.retryBtn}
-            onPress={() => { setLoading(true); setError(''); }}
-          >
-            <Text style={s.retryTxt}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
-  return (
+  if (error)   return (
     <SafeAreaView style={s.safe}>
-
-      {/* ── Filter Tab Bar ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={s.tabBar}
-        contentContainerStyle={s.tabBarContent}
-      >
-        {TABS.map(tab => {
-          const n       = count(tab.key);
-          const active  = activeTab === tab.key;
-          const st      = STATUS[tab.key] || {};
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={[s.tab, active && { backgroundColor: st.badge || COLORS.primary, borderColor: st.badge || COLORS.primary }]}
-              onPress={() => { setActiveTab(tab.key); setExpanded(null); }}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.tabTxt, active && s.tabTxtActive]}>
-                {tab.label}
-              </Text>
-              {n > 0 && (
-                <View style={[s.tabBadge, active ? s.tabBadgeActive : { backgroundColor: st.badge || '#ccc' }]}>
-                  <Text style={s.tabBadgeTxt}>{n}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      {/* ── Booking Cards ── */}
-      <FlatList
-        data={bookings}
-        keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 14, paddingBottom: 40, flexGrow: 1 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => setRefreshing(true)} // listener will reset it
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
-          />
-        }
-        ListEmptyComponent={
-          <View style={s.emptyBox}>
-            <Text style={s.emptyIcon}>📭</Text>
-            <Text style={s.emptyTitle}>
-              {activeTab === 'all' ? 'No Bookings Yet' : `No ${activeTab.toUpperCase()} Bookings`}
-            </Text>
-            <Text style={s.emptySub}>
-              {activeTab === 'all'
-                ? 'Farmers will send requests here once you add machines.'
-                : `Switch to ALL tab to see all bookings.`}
-            </Text>
-          </View>
-        }
-        renderItem={({ item }) => {
-          const st          = STATUS[item.status] || fallbackStatus;
-          const isExpanded  = expanded === item.id;
-          const isActioning = actioning === item.id;
-          const displayType = item.machineTypeLabel || getCategoryLabel(item.machineType);
-
-          return (
-            <View style={[s.card, { borderLeftColor: st.dot, borderLeftWidth: 4 }]}>
-
-              {/* ── Card Top: farmer + status badge ── */}
-              <TouchableOpacity
-                style={s.cardTouchable}
-                onPress={() => setExpanded(isExpanded ? null : item.id)}
-                activeOpacity={0.85}
-              >
-                <View style={s.cardHeader}>
-                  {/* Left: avatar + name */}
-                  <View style={[s.avatar, { backgroundColor: st.bg }]}>
-                    <Text style={s.avatarTxt}>👨‍🌾</Text>
-                  </View>
-                  <View style={s.cardMid}>
-                    <Text style={s.farmerName} numberOfLines={1}>
-                      {item.farmerName || 'Farmer'}
-                    </Text>
-                    {item.farmerPhone ? (
-                      <Text style={s.farmerPhone}>📞 +91 {item.farmerPhone}</Text>
-                    ) : null}
-                  </View>
-                  {/* Right: status badge */}
-                  <View style={[s.statusBadge, { backgroundColor: st.bg }]}>
-                    <View style={[s.statusDot, { backgroundColor: st.dot }]} />
-                    <Text style={[s.statusTxt, { color: st.text }]}>{st.label}</Text>
-                  </View>
-                </View>
-
-                {/* ── Machine + booking details ── */}
-                <View style={s.detailsRow}>
-                  <View style={s.detailChip}>
-                    <Text style={s.detailChipTxt}>🚜 {displayType}</Text>
-                  </View>
-                  <View style={s.detailChip}>
-                    <Text style={s.detailChipTxt}>📅 {item.date}</Text>
-                  </View>
-                  <View style={s.detailChip}>
-                    <Text style={s.detailChipTxt}>⏰ {item.timeSlot}</Text>
-                  </View>
-                  <View style={s.detailChip}>
-                    <Text style={s.detailChipTxt}>🌾 {item.hectareRequested} ha</Text>
-                  </View>
-                </View>
-
-                {/* Expand hint */}
-                <Text style={s.expandHint}>{isExpanded ? '▲ Collapse' : '▼ Actions & Contact'}</Text>
-              </TouchableOpacity>
-
-              {/* ── Expanded Section ── */}
-              {isExpanded && (
-                <View style={s.expandedSection}>
-
-                  {/* Contact farmer */}
-                  {item.farmerPhone ? (
-                    <PhoneConnect
-                      phone={item.farmerPhone}
-                      name={item.farmerName || 'Farmer'}
-                      role="Farmer 👨‍🌾"
-                    />
-                  ) : (
-                    <View style={s.noPhoneBox}>
-                      <Text style={s.noPhoneTxt}>📵 Farmer phone not available</Text>
-                    </View>
-                  )}
-
-                  {/* ── Action Buttons based on status ── */}
-
-                  {/* PENDING → Accept / Reject */}
-                  {item.status === 'pending' && (
-                    <View style={s.actionRow}>
-                      <TouchableOpacity
-                        style={[s.acceptBtn, isActioning && s.btnDisabled]}
-                        onPress={() => handleAccept(item)}
-                        disabled={isActioning}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={s.acceptBtnTxt}>
-                          {isActioning ? 'Processing…' : '✅  ACCEPT'}
-                        </Text>
-                      </TouchableOpacity>
-                      <View style={{ width: 10 }} />
-                      <TouchableOpacity
-                        style={[s.rejectBtn, isActioning && s.btnDisabled]}
-                        onPress={() => handleReject(item)}
-                        disabled={isActioning}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={s.rejectBtnTxt}>
-                          {isActioning ? '…' : '❌  REJECT'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
-                  {/* ACCEPTED → Start Work */}
-                  {item.status === 'accepted' && (
-                    <TouchableOpacity
-                      style={s.startBtn}
-                      onPress={() => navigation.navigate('WorkStartOTP', { booking: item })}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={s.startBtnTxt}>🔐  ENTER OTP & START WORK</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {/* ONGOING → Continue */}
-                  {item.status === 'ongoing' && (
-                    <TouchableOpacity
-                      style={s.ongoingBtn}
-                      onPress={() => navigation.navigate('WorkInProgress', { booking: item })}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={s.ongoingBtnTxt}>⚙️  WORK IN PROGRESS →</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {/* COMPLETED → summary info */}
-                  {item.status === 'completed' && (
-                    <View style={s.completedBox}>
-                      <Text style={s.completedTxt}>
-                        ✅  Work Done: {item.hectareCompleted || 0} ha  ·  Commission: ₹{item.commission || 0}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* REJECTED */}
-                  {item.status === 'rejected' && (
-                    <View style={s.rejectedBox}>
-                      <Text style={s.rejectedTxt}>❌  This booking was rejected.</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
-          );
-        }}
-      />
+      <View style={s.errBox}>
+        <Text style={s.errIcon}>⚠️</Text>
+        <Text style={s.errTitle}>Something went wrong</Text>
+        <Text style={s.errMsg}>{error}</Text>
+        <TouchableOpacity style={s.retryBtn} onPress={() => { setLoading(true); setError(''); }}>
+          <Text style={s.retryTxt}>Retry</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
+  );
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={s.safe}>
+
+        {/* Tab bar */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
+          {TABS.map(tab => {
+            const n      = count(tab.key);
+            const active = activeTab === tab.key;
+            const dotCol = STATUS[tab.key]?.dot || COLORS.primary;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[s.tab, active && { backgroundColor: dotCol, borderColor: dotCol }]}
+                onPress={() => { setActiveTab(tab.key); setExpanded(null); openSwipeRef.current?.close(); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.tabTxt, active && s.tabTxtActive]}>{tab.label}</Text>
+                {n > 0 && (
+                  <View style={[s.tabBadge, active ? s.tabBadgeOn : { backgroundColor: dotCol }]}>
+                    <Text style={s.tabBadgeTxt}>{n}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* List */}
+        <FlatList
+          data={bookings}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ padding: rs(14), paddingBottom: rs(40), flexGrow: 1 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(true)} colors={[COLORS.primary]} />}
+          ListEmptyComponent={
+            <View style={s.emptyBox}>
+              <Text style={s.emptyIcon}>📭</Text>
+              <Text style={s.emptyTitle}>{activeTab === 'all' ? 'No Bookings Yet' : `No ${activeTab.toUpperCase()} Bookings`}</Text>
+              <Text style={s.emptySub}>{activeTab === 'all' ? 'Farmers will send requests here.' : 'Switch to ALL tab.'}</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <BookingCard
+              key={item.id}
+              item={item}
+              ownerId={uid}
+              expanded={expanded}
+              onToggle={(id) => setExpanded(prev => prev === id ? null : id)}
+              onDeleted={handleDeleted}
+              onAccept={handleAccept}
+              onReject={handleReject}
+              navigation={navigation}
+              actioning={actioning}
+              openSwipeRef={openSwipeRef}
+            />
+          )}
+        />
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ── Shared delete action styles ───────────────────────────────────────────────
+const sa = StyleSheet.create({
+  actionWrap: {
+    width: rs(80), justifyContent: 'center', alignItems: 'center',
+    marginBottom: rs(12), borderRadius: rs(16), overflow: 'hidden',
+  },
+  deleteBtn: {
+    flex: 1, width: '100%', backgroundColor: '#EF4444',
+    justifyContent: 'center', alignItems: 'center', borderRadius: rs(16),
+  },
+  trashIcon:  { fontSize: rf(22), marginBottom: rs(2) },
+  deleteTxt:  { fontSize: rf(12), fontWeight: '800', color: '#fff' },
+});
+
+// ── Screen styles ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.background },
+  safe:        { flex: 1, backgroundColor: '#F4F6F8' },
+  tabBar:      { maxHeight: rs(52), borderBottomWidth: 1, borderBottomColor: '#F0F0F0', backgroundColor: '#fff' },
+  tabBarContent:{ paddingHorizontal: rs(12), paddingVertical: rs(8), alignItems: 'center' },
+  tab:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(14), paddingVertical: rs(6), borderRadius: rs(20), borderWidth: rs(1.5), borderColor: '#E5E7EB', marginRight: rs(8), backgroundColor: '#fff' },
+  tabTxt:      { fontSize: rf(11), fontWeight: '700', color: '#6B7280' },
+  tabTxtActive:{ color: '#fff' },
+  tabBadge:    { marginLeft: rs(5), minWidth: rs(18), height: rs(18), borderRadius: rs(9), alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(4) },
+  tabBadgeOn:  { backgroundColor: 'rgba(255,255,255,0.3)' },
+  tabBadgeTxt: { fontSize: rf(10), fontWeight: '900', color: '#fff' },
 
-  // Tab bar
-  tabBar:        { maxHeight: 52, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  tabBarContent: { paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center' },
-  tab:           {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 20, borderWidth: 1.5,
-    borderColor: COLORS.border, marginRight: 8,
-    backgroundColor: '#fff',
-  },
-  tabTxt:        { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary },
-  tabTxtActive:  { color: '#fff' },
-  tabBadge:      {
-    marginLeft: 5, minWidth: 18, height: 18,
-    borderRadius: 9, alignItems: 'center',
-    justifyContent: 'center', paddingHorizontal: 4,
-  },
-  tabBadgeActive:{ backgroundColor: 'rgba(255,255,255,0.3)' },
-  tabBadgeTxt:   { fontSize: 10, fontWeight: '900', color: '#fff' },
+  card:        { backgroundColor: '#fff', borderRadius: rs(16), marginBottom: rs(12), elevation: 3, overflow: 'hidden', borderLeftWidth: rs(4) },
+  cardTouch:   { padding: rs(14) },
+  cardHeader:  { flexDirection: 'row', alignItems: 'center', marginBottom: rs(10) },
+  avatar:      { width: rs(42), height: rs(42), borderRadius: rs(21), alignItems: 'center', justifyContent: 'center', marginRight: rs(10) },
+  avatarTxt:   { fontSize: rf(20) },
+  farmerName:  { fontSize: rf(15), fontWeight: '800', color: '#111827' },
+  farmerPhone: { fontSize: rf(12), color: '#6B7280', marginTop: rs(2) },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(10), paddingVertical: rs(5), borderRadius: rs(20) },
+  statusDot:   { width: rs(7), height: rs(7), borderRadius: rs(4), marginRight: rs(5) },
+  statusTxt:   { fontSize: rf(11), fontWeight: '800' },
+  chipsRow:    { flexDirection: 'row', flexWrap: 'wrap', marginBottom: rs(6) },
+  chip:        { backgroundColor: '#F4F6F8', borderRadius: rs(8), paddingHorizontal: rs(8), paddingVertical: rs(4), marginRight: rs(6), marginBottom: rs(5) },
+  chipTxt:     { fontSize: rf(12), color: '#374151', fontWeight: '600' },
+  hintRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  hint:        { fontSize: rf(11), color: '#9CA3AF' },
+  swipeHint:   { fontSize: rf(11), color: '#EF4444', fontWeight: '600' },
 
-  // Card
-  card:          {
-    backgroundColor: '#fff', borderRadius: 16,
-    marginBottom: 12, elevation: 3,
-    overflow: 'hidden',
-  },
-  cardTouchable: { padding: 14 },
-  cardHeader:    { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  avatar:        {
-    width: 44, height: 44, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center', marginRight: 10,
-  },
-  avatarTxt:     { fontSize: 22 },
-  cardMid:       { flex: 1 },
-  farmerName:    { fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
-  farmerPhone:   { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
+  expanded:    { borderTopWidth: 1, borderTopColor: '#F0F0F0', padding: rs(14) },
+  noPhone:     { backgroundColor: '#FFF9E6', borderRadius: rs(10), padding: rs(10), marginBottom: rs(10), alignItems: 'center' },
+  noPhoneTxt:  { fontSize: rf(13), color: '#92400E' },
 
-  statusBadge:   {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
-  },
-  statusDot:     { width: 7, height: 7, borderRadius: 4, marginRight: 5 },
-  statusTxt:     { fontSize: 11, fontWeight: '800' },
+  actionRow:   { flexDirection: 'row', marginTop: rs(4) },
+  acceptBtn:   { flex: 1, backgroundColor: '#1C7C54', borderRadius: rs(12), paddingVertical: rs(13), alignItems: 'center' },
+  acceptTxt:   { color: '#fff', fontWeight: '800', fontSize: rf(14) },
+  rejectBtn:   { flex: 1, backgroundColor: '#EF4444', borderRadius: rs(12), paddingVertical: rs(13), alignItems: 'center' },
+  rejectTxt:   { color: '#fff', fontWeight: '800', fontSize: rf(14) },
+  btnDim:      { opacity: 0.5 },
+  startBtn:    { backgroundColor: '#1D4ED8', borderRadius: rs(12), paddingVertical: rs(13), alignItems: 'center', marginTop: rs(4) },
+  startTxt:    { color: '#fff', fontWeight: '800', fontSize: rf(14) },
+  ongoingBtn:  { backgroundColor: '#F59E0B', borderRadius: rs(12), paddingVertical: rs(13), alignItems: 'center', marginTop: rs(4) },
+  ongoingTxt:  { color: '#fff', fontWeight: '800', fontSize: rf(14) },
+  doneBox:     { backgroundColor: '#ECFDF5', borderRadius: rs(10), padding: rs(12), marginTop: rs(4) },
+  doneTxt:     { fontSize: rf(13), fontWeight: '600', color: '#065F46', textAlign: 'center' },
+  rejBox:      { backgroundColor: '#FEF2F2', borderRadius: rs(10), padding: rs(12), marginTop: rs(4) },
+  rejTxt:      { fontSize: rf(13), fontWeight: '600', color: '#991B1B', textAlign: 'center' },
 
-  detailsRow:    { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
-  detailChip:    {
-    backgroundColor: '#F4F6F8', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 4,
-    marginRight: 6, marginBottom: 6,
-  },
-  detailChipTxt: { fontSize: 12, color: COLORS.textPrimary, fontWeight: '600' },
-
-  expandHint:    { fontSize: 11, color: COLORS.textSecondary, textAlign: 'center', marginTop: 4 },
-
-  // Expanded
-  expandedSection: {
-    borderTopWidth: 1, borderTopColor: COLORS.border,
-    padding: 14,
-  },
-  noPhoneBox:    { backgroundColor: '#FFF9E6', borderRadius: 10, padding: 10, marginBottom: 10, alignItems: 'center' },
-  noPhoneTxt:    { fontSize: 13, color: '#92400E' },
-
-  // Action buttons
-  actionRow:     { flexDirection: 'row', marginTop: 4 },
-  acceptBtn:     {
-    flex: 1, backgroundColor: COLORS.primary,
-    borderRadius: 12, paddingVertical: 13, alignItems: 'center',
-  },
-  acceptBtnTxt:  { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
-  rejectBtn:     {
-    flex: 1, backgroundColor: COLORS.error,
-    borderRadius: 12, paddingVertical: 13, alignItems: 'center',
-  },
-  rejectBtnTxt:  { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
-  btnDisabled:   { opacity: 0.5 },
-
-  startBtn:      {
-    backgroundColor: '#1D4ED8', borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginTop: 4,
-  },
-  startBtnTxt:   { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
-
-  ongoingBtn:    {
-    backgroundColor: '#F59E0B', borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginTop: 4,
-  },
-  ongoingBtnTxt: { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
-
-  completedBox:  {
-    backgroundColor: '#ECFDF5', borderRadius: 10,
-    padding: 12, marginTop: 4,
-  },
-  completedTxt:  { fontSize: 13, fontWeight: '700', color: '#065F46', textAlign: 'center' },
-
-  rejectedBox:   {
-    backgroundColor: '#FEF2F2', borderRadius: 10,
-    padding: 12, marginTop: 4,
-  },
-  rejectedTxt:   { fontSize: 13, fontWeight: '700', color: '#991B1B', textAlign: 'center' },
-
-  // Error state
-  errorBox:      { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  errorIcon:     { fontSize: 52, marginBottom: 12 },
-  errorTitle:    { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 },
-  errorMsg:      { fontSize: 13, color: COLORS.error, textAlign: 'center', marginBottom: 20 },
-  retryBtn:      {
-    backgroundColor: COLORS.primary, borderRadius: 12,
-    paddingHorizontal: 28, paddingVertical: 12,
-  },
-  retryTxt:      { color: '#fff', fontWeight: '700', fontSize: 15 },
-
-  // Empty state
-  emptyBox:      { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emptyIcon:     { fontSize: 52, marginBottom: 14 },
-  emptyTitle:    { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, textAlign: 'center' },
-  emptySub:      { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8 },
+  errBox:      { flex: 1, justifyContent: 'center', alignItems: 'center', padding: rs(32) },
+  errIcon:     { fontSize: rf(48), marginBottom: rs(12) },
+  errTitle:    { fontSize: rf(18), fontWeight: '700', color: '#111827', marginBottom: rs(8) },
+  errMsg:      { fontSize: rf(13), color: '#EF4444', textAlign: 'center', marginBottom: rs(20) },
+  retryBtn:    { backgroundColor: '#1C7C54', borderRadius: rs(12), paddingHorizontal: rs(28), paddingVertical: rs(12) },
+  retryTxt:    { color: '#fff', fontWeight: '700', fontSize: rf(15) },
+  emptyBox:    { flex: 1, justifyContent: 'center', alignItems: 'center', padding: rs(40) },
+  emptyIcon:   { fontSize: rf(48), marginBottom: rs(12) },
+  emptyTitle:  { fontSize: rf(18), fontWeight: '700', color: '#111827', textAlign: 'center' },
+  emptySub:    { fontSize: rf(13), color: '#6B7280', textAlign: 'center', marginTop: rs(8) },
 });

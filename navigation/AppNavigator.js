@@ -1,207 +1,212 @@
-// navigation/AppNavigator.js
+// navigation/AppNavigator.js — KYC guard added
+// GUARD ORDER:
+//   1. No user → RoleSelect
+//   2. Owner + accessGranted=false → KycScreen (blocked)
+//   3. Owner + isLocked=true → LockWall (commission)
+//   4. Otherwise → normal home screens
+
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, Image, ActivityIndicator,
   TouchableOpacity, StyleSheet,
 } from 'react-native';
-import { NavigationContainer }        from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { LinearGradient }             from 'expo-linear-gradient';
-import { Feather }                    from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { FIcon }          from '../utils/icons';
+import { useAuth }        from '../context/AuthContext';
+import { useUser }        from '../context/UserContext';
+import { checkTimeLock, listenOwnerLockState, computeLockState } from '../firebase/commission';
+import { listenKycStatus }  from '../firebase/kyc';
+import { COLORS }    from '../constants/colors';
+import { ROLES }     from '../constants/roles';
+import { ICONS }     from '../assets/index';
+import { rs, rf }    from '../utils/responsive';
 
-import { useAuth }    from '../context/AuthContext';
-import { useUser }    from '../context/UserContext';
-import { updateUser } from '../firebase/firestore';
-import { COLORS }     from '../constants/colors';
-import { ROLES }      from '../constants/roles';
-import { ICONS }      from '../assets/index';
+import RoleSelect           from '../src/common/screens/RoleSelect';
+import LoginScreen          from '../src/common/screens/LoginScreen';
+import OTPScreen            from '../src/common/screens/OTPScreen';
+import ProfileSetup         from '../src/common/screens/ProfileSetup';
+import FarmerTabNavigator   from '../src/farmer/navigation/FarmerTabNavigator';
+import LocationSelect       from '../src/farmer/screens/LocationSelect';
+import MachineList          from '../src/farmer/screens/MachineList';
+import MachineDetails       from '../src/farmer/screens/MachineDetails';
+import BookingScreen        from '../src/farmer/screens/BookingScreen';
+import BookingConfirm       from '../src/farmer/screens/BookingConfirm';
+import RatingScreen         from '../src/farmer/screens/RatingScreen';
+import OwnerTabNavigator    from '../src/owner/navigation/OwnerTabNavigator';
+import OwnerDashboard       from '../src/owner/screens/OwnerDashboard';
+import BookingDetails       from '../src/owner/screens/BookingDetails';
+import WorkStartOTP         from '../src/owner/screens/WorkStartOTP';
+import WorkInProgress       from '../src/owner/screens/WorkInProgress';
+import WorkComplete         from '../src/owner/screens/WorkComplete';
+import PayCommission        from '../src/owner/screens/PayCommission';
+import OwnerProfile         from '../src/owner/screens/OwnerProfile';
+import EditMachine          from '../src/owner/screens/EditMachine';
+import KycScreen            from '../src/owner/screens/KycScreen';
+import AdminLoginScreen     from '../src/admin/screens/AdminLoginScreen';
+import AdminDashboard       from '../src/admin/screens/AdminDashboard';
+import UsersList            from '../src/admin/screens/UsersList';
+import MachinesList         from '../src/admin/screens/MachinesList';
+import PaymentsList         from '../src/admin/screens/PaymentsList';
+import KycVerificationList  from '../src/admin/screens/KycVerificationList';
+import Reports              from '../src/admin/screens/Reports';
+import AdminAppAccount      from '../src/admin/screens/AdminAppAccount';
 
-// Auth
-import RoleSelect   from '../src/common/screens/RoleSelect';
-import LoginScreen  from '../src/common/screens/LoginScreen';
-import OTPScreen    from '../src/common/screens/OTPScreen';
-import ProfileSetup from '../src/common/screens/ProfileSetup';
-
-// ── Farmer — Bottom Tab Navigator
-import FarmerTabNavigator from '../src/farmer/navigation/FarmerTabNavigator';
-import LocationSelect from '../src/farmer/screens/LocationSelect';
-import MachineList    from '../src/farmer/screens/MachineList';
-import MachineDetails from '../src/farmer/screens/MachineDetails';
-import BookingScreen  from '../src/farmer/screens/BookingScreen';
-import BookingConfirm from '../src/farmer/screens/BookingConfirm';
-import RatingScreen   from '../src/farmer/screens/RatingScreen';
-
-// ── Owner — Bottom Tab Navigator
-import OwnerTabNavigator from '../src/owner/navigation/OwnerTabNavigator';
-import OwnerDashboard    from '../src/owner/screens/OwnerDashboard';
-import BookingDetails    from '../src/owner/screens/BookingDetails';
-import WorkStartOTP      from '../src/owner/screens/WorkStartOTP';
-import WorkInProgress    from '../src/owner/screens/WorkInProgress';
-import WorkComplete      from '../src/owner/screens/WorkComplete';
-import PaymentScreen     from '../src/owner/screens/PaymentScreen';
-import OwnerProfile      from '../src/owner/screens/OwnerProfile';
-import EditMachine       from '../src/owner/screens/EditMachine';
-
-// Admin
-import AdminDashboard   from '../src/admin/screens/AdminDashboard';
-import UsersList        from '../src/admin/screens/UsersList';
-import MachinesList     from '../src/admin/screens/MachinesList';
-import PaymentsList     from '../src/admin/screens/PaymentsList';
-import Reports          from '../src/admin/screens/Reports';
-import AdminAppAccount  from '../src/admin/screens/AdminAppAccount';
-
-const Stack   = createNativeStackNavigator();
-const PRIMARY = '#1C7C54';
-
+const Stack  = createNativeStackNavigator();
 const HEADER = {
-  headerStyle:      { backgroundColor: '#fff', elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  headerTintColor:  '#111827',
-  headerTitleStyle: { fontWeight: '800', fontSize: 18, color: '#111827' },
+  headerStyle:       { backgroundColor: '#fff', elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerTintColor:   '#111827',
+  headerTitleStyle:  { fontWeight: '800', fontSize: 18, color: '#111827' },
   headerBackTitleVisible: false,
 };
 
-// ── Splash ────────────────────────────────────────────────────────────────────
 function Splash() {
   return (
-    <LinearGradient
-      colors={['#145A3E', '#1C7C54', '#2E9E6B']}
-      style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <View style={{
-        width: 110, height: 110, borderRadius: 28, overflow: 'hidden',
-        borderWidth: 3, borderColor: 'rgba(255,255,255,0.25)', marginBottom: 24,
-        elevation: 10, backgroundColor: 'rgba(255,255,255,0.15)',
-        alignItems: 'center', justifyContent: 'center',
-      }}>
+    <LinearGradient colors={['#145A3E', '#1C7C54', '#2E9E6B']} style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
+      <View style={{ width:rs(110), height:rs(110), borderRadius:rs(28), overflow:'hidden', borderWidth:rs(3), borderColor:'rgba(255,255,255,0.25)', marginBottom:rs(24), backgroundColor:'rgba(255,255,255,0.15)', alignItems:'center', justifyContent:'center' }}>
         {ICONS.logo
-          ? <Image source={ICONS.logo} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          : <Text style={{ fontSize: 56 }}>🌾</Text>}
+          ? <Image source={ICONS.logo} style={{ width:'100%', height:'100%' }} resizeMode="cover" />
+          : <Text style={{ fontSize: rf(48) }}>🌾</Text>}
       </View>
-      <Text style={{ fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: 4, marginBottom: 4 }}>
-        Namma Vayal
-      </Text>
-      <Text style={{ fontSize: 16, color: 'rgba(255,255,255,0.65)', letterSpacing: 3, marginBottom: 48 }}>
-        நம்ம வாயல்
-      </Text>
+      <Text style={{ fontSize:rf(30), fontWeight:'900', color:'#fff', letterSpacing:2, marginBottom:rs(4) }}>Namma Vayal</Text>
+      <Text style={{ fontSize:rf(14), color:'rgba(255,255,255,0.65)', letterSpacing:3, marginBottom:rs(40) }}>நம்ம வாயல்</Text>
       <ActivityIndicator size="large" color="rgba(255,255,255,0.85)" />
     </LinearGradient>
   );
 }
 
-// ── LockWall ──────────────────────────────────────────────────────────────────
 function LockWallScreen({ navigation }) {
   return (
-    <LinearGradient colors={['#7F1D1D', '#B91C1C', '#EF4444']} style={ls.safe}>
-      <View style={ls.iconBox}>
-        <Feather name="lock" size={48} color="#fff" />
-      </View>
-      <Text style={ls.appName}>Namma Vayal</Text>
-      <Text style={ls.title}>Account Locked</Text>
-      <Text style={ls.sub}>
-        Your 24-hour commission window has passed.{'\n'}
-        Pay commission to unlock all features.
-      </Text>
-      <View style={ls.infoCard}>
-        <Text style={ls.infoTitle}>Pay to unlock:</Text>
-        {[
-          'Accept new booking requests',
-          'Start & complete work',
-          'Manage your machines',
-          'All dashboard features',
-        ].map(t => (
-          <View key={t} style={ls.infoRow}>
-            <Feather name="check-circle" size={14} color="#6EE7B7" style={{ marginRight: 8 }} />
-            <Text style={ls.infoItem}>{t}</Text>
+    <LinearGradient colors={['#7F1D1D', '#B91C1C', '#EF4444']} style={lw.safe}>
+      <View style={lw.iconBox}><FIcon name="lock" size={rs(44)} color="#fff" fallback="🔒" /></View>
+      <Text style={lw.appName}>Namma Vayal</Text>
+      <Text style={lw.title}>Account Locked</Text>
+      <Text style={lw.sub}>Your 24-hour commission window has passed.{'\n'}Pay commission to restore full access.</Text>
+      <View style={lw.infoCard}>
+        <Text style={lw.infoTitle}>Locked until payment:</Text>
+        {['Accept new bookings','Start & complete work','Manage machines','All dashboard features'].map(t => (
+          <View key={t} style={lw.infoRow}>
+            <Text style={lw.checkMark}>✕</Text>
+            <Text style={lw.infoItem}>{t}</Text>
           </View>
         ))}
       </View>
-      <TouchableOpacity
-        style={ls.payBtn}
-        onPress={() => navigation.navigate('PayCommission')}
-        activeOpacity={0.88}
-      >
-        <Feather name="credit-card" size={18} color="#B91C1C" style={{ marginRight: 8 }} />
-        <Text style={ls.payBtnTxt}>Pay Commission Now</Text>
+      <TouchableOpacity style={lw.payBtn} onPress={() => navigation.navigate('PayCommission')} activeOpacity={0.88}>
+        <FIcon name="credit-card" size={rs(18)} color="#B91C1C" fallback="💳" style={{ marginRight: rs(8) }} />
+        <Text style={lw.payBtnTxt}>Pay Commission Now</Text>
       </TouchableOpacity>
     </LinearGradient>
   );
 }
 
-const ls = StyleSheet.create({
-  safe:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  iconBox:   { width: 96, height: 96, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  appName:   { fontSize: 14, color: 'rgba(255,255,255,0.6)', letterSpacing: 2, marginBottom: 8 },
-  title:     { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 10, textAlign: 'center' },
-  sub:       { fontSize: 14, color: 'rgba(255,255,255,0.85)', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-  infoCard:  { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 18, padding: 20, width: '100%', marginBottom: 28 },
-  infoTitle: { fontSize: 14, fontWeight: '800', color: '#fff', marginBottom: 12 },
-  infoRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  infoItem:  { fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 20 },
-  payBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 18, width: '100%', elevation: 4 },
-  payBtnTxt: { color: '#B91C1C', fontSize: 17, fontWeight: '900' },
+const lw = StyleSheet.create({
+  safe:      { flex:1, alignItems:'center', justifyContent:'center', padding:rs(28) },
+  iconBox:   { width:rs(88), height:rs(88), borderRadius:rs(22), backgroundColor:'rgba(255,255,255,0.15)', alignItems:'center', justifyContent:'center', marginBottom:rs(14) },
+  appName:   { fontSize:rf(13), color:'rgba(255,255,255,0.55)', letterSpacing:2, marginBottom:rs(6) },
+  title:     { fontSize:rf(26), fontWeight:'900', color:'#fff', marginBottom:rs(10), textAlign:'center' },
+  sub:       { fontSize:rf(14), color:'rgba(255,255,255,0.82)', textAlign:'center', lineHeight:rf(22), marginBottom:rs(24) },
+  infoCard:  { backgroundColor:'rgba(255,255,255,0.12)', borderRadius:rs(16), padding:rs(18), width:'100%', marginBottom:rs(24) },
+  infoTitle: { fontSize:rf(13), fontWeight:'800', color:'rgba(255,255,255,0.7)', marginBottom:rs(10) },
+  infoRow:   { flexDirection:'row', alignItems:'center', marginBottom:rs(7) },
+  checkMark: { color:'#FCA5A5', marginRight:rs(8), fontSize:rf(13), fontWeight:'800' },
+  infoItem:  { fontSize:rf(13), color:'rgba(255,255,255,0.85)' },
+  payBtn:    { flexDirection:'row', alignItems:'center', justifyContent:'center', backgroundColor:'#fff', borderRadius:rs(16), paddingVertical:rs(17), width:'100%', elevation:4 },
+  payBtnTxt: { color:'#B91C1C', fontSize:rf(16), fontWeight:'900' },
 });
 
-// ── AppNavigator ──────────────────────────────────────────────────────────────
 export default function AppNavigator() {
   const { user, loading: authLoading, userProfile: authProfile } = useAuth();
   const { userProfile: ctxProfile, setUserProfile, updateProfile } = useUser();
+  const navRef       = useNavigationContainerRef();
+  const lockTimerRef = useRef(null);
   const [ready, setReady] = useState(false);
-  const lockTimerRef      = useRef(null);
 
-  useEffect(() => {
-    const t = setTimeout(() => setReady(true), 8000);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    if (authProfile && !ctxProfile) setUserProfile(authProfile);
-  }, [authProfile, ctxProfile, setUserProfile]);
+  useEffect(() => { const t = setTimeout(() => setReady(true), 5000); return () => clearTimeout(t); }, []);
+  useEffect(() => { if (authProfile && !ctxProfile) setUserProfile(authProfile); }, [authProfile, ctxProfile]);
 
   const profile = ctxProfile || authProfile;
+  const uid     = profile?.id;
+  const role    = profile?.role;
 
-  // 24-hour auto-lock
+  // ── KYC real-time listener ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!uid || role !== ROLES.OWNER) return;
+    const unsub = listenKycStatus(uid, ({ kycStatus, accessGranted, isVerified }) => {
+      updateProfile({ kycStatus, accessGranted, isVerified });
+      if (!navRef.isReady()) return;
+      if (accessGranted === true && profile?.accessGranted !== true) {
+        // Just approved → go to OwnerHome
+        navRef.reset({ index: 0, routes: [{ name: 'OwnerHome' }] });
+      } else if (accessGranted === false && profile?.accessGranted === true) {
+        // Revoked → back to KYC
+        navRef.reset({ index: 0, routes: [{ name: 'KycScreen' }] });
+      }
+    });
+    return unsub;
+  }, [uid, role]);
+
+  // ── Commission lock listener ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!uid || role !== ROLES.OWNER) return;
+    if (profile?.accessGranted === false) return; // KYC not approved yet
+    const unsub = listenOwnerLockState(uid, (state) => {
+      const wasLocked = profile?.isLocked === true;
+      updateProfile({ isLocked: state.isLocked, paymentStatus: state.paymentStatus, otpVerifiedAt: state.otpVerifiedAt, paymentDeadline: state.paymentDeadline, commissionAmount: state.commissionAmount });
+      if (!navRef.isReady()) return;
+      if (state.isLocked && !wasLocked) navRef.reset({ index: 0, routes: [{ name: 'LockWall' }] });
+      else if (!state.isLocked && wasLocked && state.paymentStatus === 'paid') navRef.reset({ index: 0, routes: [{ name: 'OwnerHome' }] });
+    });
+    return unsub;
+  }, [uid, role, profile?.accessGranted]);
+
+  // ── Precision lock timer ─────────────────────────────────────────────────
   useEffect(() => {
     clearTimeout(lockTimerRef.current);
-    if (profile?.role !== ROLES.OWNER) return;
-    if (profile?.isLocked === true)    return;
-    const deadline = profile?.paymentDeadline;
-    if (!deadline) return;
-    const uid    = profile?.id;
-    const msLeft = new Date(deadline).getTime() - Date.now();
-    const doLock = async () => {
-      try {
-        await updateUser(uid, { isLocked: true });
+    if (!uid || role !== ROLES.OWNER) return;
+    if (!profile?.accessGranted) return;
+    if (profile?.paymentStatus === 'paid' || profile?.isLocked) return;
+    const { msRemaining } = computeLockState(profile);
+    if (!msRemaining || msRemaining <= 0) return;
+    lockTimerRef.current = setTimeout(async () => {
+      const result = await checkTimeLock(uid).catch(() => null);
+      if (result?.isLocked) {
         updateProfile({ isLocked: true });
-      } catch { lockTimerRef.current = setTimeout(doLock, 30_000); }
-    };
-    if (msLeft <= 0) doLock();
-    else lockTimerRef.current = setTimeout(doLock, msLeft);
+        if (navRef.isReady()) navRef.reset({ index: 0, routes: [{ name: 'LockWall' }] });
+      }
+    }, msRemaining);
     return () => clearTimeout(lockTimerRef.current);
-  }, [profile?.role, profile?.isLocked, profile?.paymentDeadline, profile?.id]);
+  }, [uid, role, profile?.otpVerifiedAt, profile?.isLocked, profile?.paymentStatus, profile?.accessGranted]);
 
   if (authLoading && !ready) return <Splash />;
 
-  const role     = profile?.role;
-  const isLocked = profile?.isLocked === true;
-
+  // ── Initial route ─────────────────────────────────────────────────────────
   let initialRoute = 'RoleSelect';
   if (user?.uid && role) {
-    if      (role === ROLES.FARMER) initialRoute = 'FarmerHome';
-    else if (role === ROLES.OWNER)  initialRoute = isLocked ? 'LockWall' : 'OwnerHome';
-    else if (role === ROLES.ADMIN)  initialRoute = 'AdminDashboard';
+    if (role === ROLES.FARMER) {
+      initialRoute = 'FarmerHome';
+    } else if (role === ROLES.OWNER) {
+      // KYC check first
+      if (profile?.accessGranted !== true) {
+        initialRoute = 'KycScreen';
+      } else {
+        const isLocked = profile?.isLocked === true || computeLockState(profile).shouldLock;
+        initialRoute = isLocked ? 'LockWall' : 'OwnerHome';
+      }
+    } else if (role === ROLES.ADMIN) {
+      initialRoute = 'AdminDashboard';
+    }
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navRef}>
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={HEADER}>
-
-        {/* ── Auth ── */}
         <Stack.Screen name="RoleSelect"   component={RoleSelect}   options={{ headerShown: false }} />
         <Stack.Screen name="Login"        component={LoginScreen}  options={{ headerShown: false }} />
         <Stack.Screen name="OTP"          component={OTPScreen}    options={{ headerShown: false }} />
         <Stack.Screen name="ProfileSetup" component={ProfileSetup} options={{ headerShown: false }} />
 
-        {/* ── Farmer — Tab Navigator ── */}
+        {/* Farmer */}
         <Stack.Screen name="FarmerHome"     component={FarmerTabNavigator} options={{ headerShown: false }} />
         <Stack.Screen name="LocationSelect" component={LocationSelect}     options={{ title: 'Set Location' }} />
         <Stack.Screen name="MachineList"    component={MachineList}        options={{ title: 'Available Machines' }} />
@@ -210,55 +215,32 @@ export default function AppNavigator() {
         <Stack.Screen name="BookingConfirm" component={BookingConfirm}     options={{ title: 'Booking Confirmed' }} />
         <Stack.Screen name="RatingScreen"   component={RatingScreen}       options={{ title: 'Rate Experience' }} />
 
-        {/* ── Lock Wall — always registered ── */}
-        <Stack.Screen
-          name="LockWall"
-          component={LockWallScreen}
-          options={{ headerShown: false, gestureEnabled: false }}
-        />
+        {/* Owner — KycScreen always registered */}
+        <Stack.Screen name="KycScreen"     component={KycScreen}      options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="LockWall"      component={LockWallScreen} options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen
           name="PayCommission"
-          component={PaymentScreen}
-          options={{
-            title: 'Pay Commission',
-            headerStyle: { backgroundColor: '#B91C1C' },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontWeight: '800' },
-            gestureEnabled: false,
-          }}
+          component={PayCommission}
+          options={{ title: 'Pay Commission', headerStyle: { backgroundColor: '#B91C1C', elevation: 0 }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800', fontSize: 18, color: '#fff' }, gestureEnabled: false }}
         />
+        <Stack.Screen name="OwnerHome"      component={OwnerTabNavigator} options={{ headerShown: false }} />
+        <Stack.Screen name="OwnerDashboard" component={OwnerDashboard}    options={{ headerShown: false }} />
+        <Stack.Screen name="BookingDetails" component={BookingDetails}    options={{ title: 'Booking Details' }} />
+        <Stack.Screen name="WorkStartOTP"   component={WorkStartOTP}      options={{ title: 'Start Work' }} />
+        <Stack.Screen name="WorkInProgress" component={WorkInProgress}    options={{ title: 'Work In Progress' }} />
+        <Stack.Screen name="WorkComplete"   component={WorkComplete}      options={{ title: 'Complete Work' }} />
+        <Stack.Screen name="OwnerProfile"   component={OwnerProfile}      options={{ title: 'My Profile' }} />
+        <Stack.Screen name="EditMachine"    component={EditMachine}       options={{ title: 'Edit Machine' }} />
 
-        {/* ── Owner — Tab Navigator as home ── */}
-        <Stack.Screen
-          name="OwnerHome"
-          component={OwnerTabNavigator}
-          options={{ headerShown: false }}
-        />
-
-        {/* ── Owner — legacy Dashboard (for navigate('OwnerDashboard') calls) ── */}
-        <Stack.Screen
-          name="OwnerDashboard"
-          component={OwnerDashboard}
-          options={{ headerShown: false }}
-        />
-
-        {/* ── Owner — stack screens pushed from tabs ── */}
-        <Stack.Screen name="BookingDetails"    component={BookingDetails}   options={{ title: 'Booking Details' }} />
-        <Stack.Screen name="WorkStartOTP"      component={WorkStartOTP}     options={{ title: 'Start Work' }} />
-        <Stack.Screen name="WorkInProgress"    component={WorkInProgress}   options={{ title: 'Work In Progress' }} />
-        <Stack.Screen name="WorkComplete"      component={WorkComplete}     options={{ title: 'Complete Work' }} />
-        <Stack.Screen name="Payment"           component={PaymentScreen}    options={{ title: 'Pay Commission' }} />
-        <Stack.Screen name="OwnerProfile"      component={OwnerProfile}     options={{ title: 'My Profile' }} />
-        <Stack.Screen name="EditMachine"       component={EditMachine}      options={{ title: 'Edit Machine' }} />
-
-        {/* ── Admin ── */}
-        <Stack.Screen name="AdminDashboard"   component={AdminDashboard}  options={{ headerShown: false }} />
-        <Stack.Screen name="UsersList"        component={UsersList}       options={{ title: 'Users' }} />
-        <Stack.Screen name="MachinesList"     component={MachinesList}    options={{ title: 'Machines' }} />
-        <Stack.Screen name="PaymentsList"     component={PaymentsList}    options={{ title: 'Payments' }} />
-        <Stack.Screen name="Reports"          component={Reports}         options={{ title: 'Reports' }} />
-        <Stack.Screen name="AdminAppAccount"  component={AdminAppAccount} options={{ title: 'App Bank Account' }} />
-
+        {/* Admin — Login uses email/password, not OTP */}
+        <Stack.Screen name="AdminLogin"        component={AdminLoginScreen}    options={{ headerShown: false }} />
+        <Stack.Screen name="AdminDashboard"    component={AdminDashboard}      options={{ headerShown: false }} />
+        <Stack.Screen name="UsersList"         component={UsersList}           options={{ title: 'Users' }} />
+        <Stack.Screen name="MachinesList"      component={MachinesList}        options={{ title: 'Machines' }} />
+        <Stack.Screen name="PaymentsList"      component={PaymentsList}        options={{ title: 'Commission Payments' }} />
+        <Stack.Screen name="KycVerificationList" component={KycVerificationList} options={{ title: 'KYC Verification' }} />
+        <Stack.Screen name="Reports"           component={Reports}             options={{ title: 'Reports' }} />
+        <Stack.Screen name="AdminAppAccount"   component={AdminAppAccount}     options={{ title: 'App Account' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

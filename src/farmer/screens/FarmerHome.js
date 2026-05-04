@@ -1,23 +1,19 @@
 // src/farmer/screens/FarmerHome.js
-// CHANGE: Categories section REMOVED from home screen
-// Categories available in "Find Machine" tab (CategoryScreen)
-
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, SafeAreaView, ScrollView,
-  TouchableOpacity, StatusBar, Image,
+  View, Text, StyleSheet, SafeAreaView,
+  ScrollView, TouchableOpacity, StatusBar, Image,
 } from 'react-native';
-import { FIcon, IIcon }          from '../../../utils/icons';
-import { useUser }               from '../../../context/UserContext';
-import { COLORS }                from '../../../constants/colors';
-import { listenBookingsByFarmer }from '../../../firebase/firestore';
-import { getCategoryLabel }      from '../../../constants/categories';
-
-const PRIMARY = '#1C7C54';
+import { FIcon, IIcon }           from '../../../utils/icons';
+import { useUser }                from '../../../context/UserContext';
+import { COLORS }                 from '../../../constants/colors';
+import { listenBookingsByFarmer } from '../../../firebase/firestore';
+import { getCategoryLabel }       from '../../../constants/categories';
+import { rs, rf, H_PAD }          from '../../../utils/responsive';
 
 const STATUS_META = {
   pending:   { color: '#F59E0B', bg: '#FFFBEB', dot: '#F59E0B', label: 'Pending'   },
-  accepted:  { color: PRIMARY,   bg: '#ECFDF5', dot: '#22C55E', label: 'Accepted'  },
+  accepted:  { color: COLORS.primary, bg: '#ECFDF5', dot: '#22C55E', label: 'Accepted' },
   ongoing:   { color: '#3B82F6', bg: '#EFF6FF', dot: '#3B82F6', label: 'Ongoing'   },
   completed: { color: '#22C55E', bg: '#F0FDF4', dot: '#22C55E', label: 'Done'      },
   cancelled: { color: '#9CA3AF', bg: '#F4F6F8', dot: '#9CA3AF', label: 'Cancelled' },
@@ -44,14 +40,16 @@ export default function FarmerHome({ navigation }) {
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
-
-        {/* ── Header: Hello + location + avatar ── */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+      >
+        {/* Header */}
         <View style={s.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={s.greetTxt}>Hello! 👋</Text>
             <View style={s.locRow}>
-              <IIcon name="location" size={14} color="#EF4444" fallback="📍" />
+              <IIcon name="location" size={rs(14)} color="#EF4444" fallback="📍" />
               <Text style={s.locTxt} numberOfLines={1}>
                 {userProfile?.taluk || 'Set location'}
                 {userProfile?.district ? `, ${userProfile.district}` : ''}
@@ -73,19 +71,17 @@ export default function FarmerHome({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Search bar ── */}
+        {/* Search bar */}
         <TouchableOpacity
           style={s.searchBar}
           onPress={() => navigation.navigate('FindMachine')}
           activeOpacity={0.85}
         >
-          <FIcon name="search" size={18} color="#9CA3AF" fallback="🔍" style={{ marginRight: 10 }} />
+          <FIcon name="search" size={rs(18)} color="#9CA3AF" fallback="🔍" style={{ marginRight: rs(10) }} />
           <Text style={s.searchPlaceholder}>Search products...</Text>
         </TouchableOpacity>
 
-        {/* ── NO Categories section here — moved to Find Machine tab ── */}
-
-        {/* ── Featured Products ── */}
+        {/* Featured */}
         <View style={s.sectionRow}>
           <Text style={s.sectionTitle}>Featured Products</Text>
           <TouchableOpacity onPress={() => navigation.navigate('FindMachine')}>
@@ -96,7 +92,7 @@ export default function FarmerHome({ navigation }) {
           <Text style={s.emptyTxt}>No products available</Text>
         )}
 
-        {/* ── CTA Banner ── */}
+        {/* CTA Banner */}
         <TouchableOpacity
           style={s.ctaBanner}
           onPress={() => navigation.navigate('FindMachine')}
@@ -108,10 +104,10 @@ export default function FarmerHome({ navigation }) {
           </Text>
         </TouchableOpacity>
 
-        {/* ── Recent Bookings ── */}
+        {/* Recent Bookings */}
         {recent.length > 0 && (
           <>
-            <View style={[s.sectionRow, { marginTop: 24 }]}>
+            <View style={[s.sectionRow, { marginTop: rs(24) }]}>
               <Text style={s.sectionTitle}>Recent Bookings</Text>
               <TouchableOpacity onPress={() => navigation.navigate('MyBookings')}>
                 <Text style={s.seeAll}>See All</Text>
@@ -140,7 +136,7 @@ export default function FarmerHome({ navigation }) {
           </>
         )}
 
-        <View style={{ height: 24 }} />
+        <View style={{ height: rs(24) }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -148,40 +144,39 @@ export default function FarmerHome({ navigation }) {
 
 const s = StyleSheet.create({
   safe:             { flex: 1, backgroundColor: '#fff' },
-  scroll:           { paddingBottom: 20 },
+  scroll:           { flexGrow: 1, paddingBottom: rs(20) },
 
-  headerRow:        { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 },
-  greetTxt:         { fontSize: 22, fontWeight: '800', color: '#111827' },
-  locRow:           { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  locTxt:           { fontSize: 13, color: '#6B7280', marginLeft: 3, flex: 1 },
+  headerRow:        { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: H_PAD, paddingTop: rs(16), paddingBottom: rs(16) },
+  greetTxt:         { fontSize: rf(22), fontWeight: '800', color: '#111827' },
+  locRow:           { flexDirection: 'row', alignItems: 'center', marginTop: rs(4) },
+  locTxt:           { fontSize: rf(13), color: '#6B7280', marginLeft: rs(3), flex: 1 },
 
-  // Avatar: 42×42 circle
-  avatarBtn:        { marginLeft: 12 },
-  avatarImg:        { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: PRIMARY },
-  avatarFallback:   { width: 42, height: 42, borderRadius: 21, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
-  avatarTxt:        { fontSize: 18, fontWeight: '900', color: '#fff' },
+  avatarBtn:        { marginLeft: rs(12) },
+  avatarImg:        { width: rs(42), height: rs(42), borderRadius: rs(21), borderWidth: rs(2), borderColor: COLORS.primary },
+  avatarFallback:   { width: rs(42), height: rs(42), borderRadius: rs(21), backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarTxt:        { fontSize: rf(18), fontWeight: '900', color: '#fff' },
 
-  searchBar:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F5F7', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginHorizontal: 20, marginBottom: 20 },
-  searchPlaceholder:{ fontSize: 15, color: '#9CA3AF', flex: 1 },
+  searchBar:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F5F7', borderRadius: rs(14), paddingHorizontal: rs(16), paddingVertical: rs(13), marginHorizontal: H_PAD, marginBottom: rs(20) },
+  searchPlaceholder:{ fontSize: rf(15), color: '#9CA3AF', flex: 1 },
 
-  sectionRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 14 },
-  sectionTitle:     { fontSize: 17, fontWeight: '800', color: '#111827' },
-  seeAll:           { fontSize: 14, color: PRIMARY, fontWeight: '700' },
+  sectionRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: H_PAD, marginBottom: rs(14) },
+  sectionTitle:     { fontSize: rf(17), fontWeight: '800', color: '#111827' },
+  seeAll:           { fontSize: rf(14), color: COLORS.primary, fontWeight: '700' },
 
-  emptyTxt:         { fontSize: 14, color: '#9CA3AF', paddingHorizontal: 20, marginBottom: 8 },
+  emptyTxt:         { fontSize: rf(14), color: '#9CA3AF', paddingHorizontal: H_PAD, marginBottom: rs(8) },
 
-  ctaBanner:        { marginHorizontal: 20, marginTop: 8, backgroundColor: PRIMARY, borderRadius: 18, padding: 22, elevation: 3 },
-  ctaTitle:         { fontSize: 18, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  ctaSub:           { fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 20 },
+  ctaBanner:        { marginHorizontal: H_PAD, marginTop: rs(8), backgroundColor: COLORS.primary, borderRadius: rs(18), padding: rs(22), elevation: 3 },
+  ctaTitle:         { fontSize: rf(18), fontWeight: '900', color: '#fff', marginBottom: rs(4) },
+  ctaSub:           { fontSize: rf(13), color: 'rgba(255,255,255,0.85)', lineHeight: rf(20) },
 
-  bookingCard:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 20, marginBottom: 10, padding: 12, elevation: 2, borderWidth: 1, borderColor: '#F0F0F0' },
-  bookingIconWrap:  { width: 50, height: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  bookingIconEmoji: { fontSize: 24 },
+  bookingCard:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: rs(14), marginHorizontal: H_PAD, marginBottom: rs(10), padding: rs(12), elevation: 2, borderWidth: 1, borderColor: '#F0F0F0' },
+  bookingIconWrap:  { width: rs(50), height: rs(50), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
+  bookingIconEmoji: { fontSize: rf(24) },
   bookingInfo:      { flex: 1 },
-  bookingType:      { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 2 },
-  bookingMeta:      { fontSize: 12, color: '#6B7280' },
-  bookingHa:        { fontSize: 12, color: PRIMARY, fontWeight: '600', marginTop: 2 },
-  statusBadge:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
-  statusDot:        { width: 6, height: 6, borderRadius: 3, marginRight: 4 },
-  statusTxt:        { fontSize: 10, fontWeight: '800' },
+  bookingType:      { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: rs(2) },
+  bookingMeta:      { fontSize: rf(12), color: '#6B7280' },
+  bookingHa:        { fontSize: rf(12), color: COLORS.primary, fontWeight: '600', marginTop: rs(2) },
+  statusBadge:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(8), paddingVertical: rs(4), borderRadius: rs(10) },
+  statusDot:        { width: rs(6), height: rs(6), borderRadius: rs(3), marginRight: rs(4) },
+  statusTxt:        { fontSize: rf(10), fontWeight: '800' },
 });

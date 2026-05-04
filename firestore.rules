@@ -1,51 +1,230 @@
 rules_version = '2';
+// ═══════════════════════════════════════════════════════════════════════════════
+// NAMMA VAYAL — PRODUCTION FIRESTORE SECURITY RULES
+// Project: vayal-33b12
+//
+// HOW TO DEPLOY:
+//   Option A (Recommended): Firebase Console → Firestore → Rules → Paste → Publish
+//   Option B (CLI):          firebase deploy --only firestore:rules
+//
+// ADMIN_UID: Get it from Firebase Console → Authentication → Users
+//   → Find admin phone number → Copy the User UID column value
+//   → Replace 'REPLACE_WITH_REAL_ADMIN_UID' below
+// ═══════════════════════════════════════════════════════════════════════════════
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Users ────────────────────────────────────────────────────────────────
-    match /users/{userId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+    // ── Helper: Is this request from the admin phone number? ─────────────────
+    // IMPORTANT: Replace with real UID from Firebase Console → Authentication
+    function isAdmin() {
+      return request.auth != null && request.auth.uid in [
+        'REPLACE_WITH_REAL_ADMIN_UID'
+        // Add more admin UIDs here if needed:
+        // 'SECOND_ADMIN_UID_HERE'
+      ];
     }
 
-    // ── Machines ─────────────────────────────────────────────────────────────
-    match /machines/{machineId} {
-      allow read:   if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
-      allow delete: if request.auth != null;
+    // ── Helper: Is this the document owner? ──────────────────────────────────
+    function isSelf(uid) {
+      return request.auth != null && request.auth.uid == uid;
     }
 
-    // ── Bookings ─────────────────────────────────────────────────────────────
+    // ── Helper: Is the user signed in? ───────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ── Helper: Fields that ONLY admin can write ──────────────────────────────
+    // Owner/farmer cannot touch these — prevents fraud
+    function touchesAdminOnlyFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'kycStatus',      // KYC approval status
+        'isVerified',     // KYC verified flag
+        'accessGranted',  // App access gate
+        'paymentStatus',  // Commission payment status
+        'isLocked',       // Account lock status
+        'adminVerified'   // Payment screenshot verified
+      ]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // USERS COLLECTION  (/users/{uid})
+    // Fields: name, phone, role, taluk, district, kycStatus, isVerified,
+    //         accessGranted, isLocked, paymentStatus, otpVerifiedAt, etc.
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /users/{uid} {
+      // READ: user can read own doc, admin can read all
+      allow read: if isSelf(uid) || isAdmin();
+
+      // CREATE: only the user themselves can create their own profile
+      allow create: if isSelf(uid) && isSignedIn();
+
+      // UPDATE:
+      //   Admin → can update anything (approve KYC, lock/unlock, verify payment)
+      //   User  → can update own profile BUT NOT admin-only fields
+      allow update: if isAdmin()
+                    || (isSelf(uid) && !touchesAdminOnlyFields());
+
+      // DELETE: only admin (soft delete preferred)
+      allow delete: if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // BOOKINGS COLLECTION  (/bookings/{bookingId})
+    // Fields: farmerId, ownerId, machineId, status, otp, date, timeSlot,
+    //         hectareRequested, hectareCompleted, commission, etc.
+    // ═══════════════════════════════════════════════════════════════════════════
     match /bookings/{bookingId} {
-      allow read:   if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
-      allow delete: if request.auth != null;
+      // READ: any signed-in user (farmers see their bookings, owners see theirs)
+      // Note: Client-side filtering by farmerId/ownerId applied in queries
+      allow read: if isSignedIn();
+
+      // CREATE: any signed-in user can create a booking (farmer books machine)
+      allow create: if isSignedIn()
+                    && request.resource.data.farmerId == request.auth.uid;
+
+      // UPDATE:
+      //   Admin   → full control
+      //   Owner   → can update status (accept/reject/complete)
+      //   Farmer  → can cancel their own booking
+      //   NEITHER → can touch paymentStatus, isLocked, adminVerified
+      allow update: if isAdmin()
+                    || (isSignedIn()
+                        && (resource.data.ownerId  == request.auth.uid
+                            || resource.data.farmerId == request.auth.uid)
+                        && !touchesAdminOnlyFields());
+
+      // DELETE: admin only (owners/farmers cannot delete — use status='cancelled')
+      // Exception: allow delete for pending bookings by owner or farmer
+      allow delete: if isAdmin()
+                    || (isSignedIn()
+                        && (resource.data.ownerId  == request.auth.uid
+                            || resource.data.farmerId == request.auth.uid)
+                        && resource.data.status != 'completed'
+                        && resource.data.paymentStatus != 'paid');
     }
 
-    // ── Daily Payments ────────────────────────────────────────────────────────
-    match /dailyPayments/{paymentId} {
-      allow read:   if request.auth != null;
-      allow write:  if request.auth != null;
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MACHINES COLLECTION  (/machines/{machineId})
+    // Fields: ownerId, type, price_per_hour, taluk, district, isActive, etc.
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /machines/{machineId} {
+      // READ: any signed-in user (farmers search machines)
+      allow read: if isSignedIn();
+
+      // CREATE: any signed-in owner (they add their own machines)
+      allow create: if isSignedIn()
+                    && request.resource.data.ownerId == request.auth.uid;
+
+      // UPDATE/DELETE: only the machine owner or admin
+      allow update: if isAdmin()
+                    || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+      allow delete: if isAdmin()
+                    || (isSignedIn() && resource.data.ownerId == request.auth.uid);
     }
 
-    // ── App Account Ledger ────────────────────────────────────────────────────
-    match /appAccount/{entryId} {
-      allow read:   if request.auth != null;
-      allow write:  if request.auth != null;
+    // ═══════════════════════════════════════════════════════════════════════════
+    // COMMISSION PAYMENTS  (/commissionPayments/{docId})
+    // Fields: ownerId, transactionId, paymentProofUrl, amount, paymentStatus,
+    //         adminVerified, submittedAt, verifiedAt, rejectedAt
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /commissionPayments/{docId} {
+      // READ: own payments or admin
+      allow read: if isAdmin()
+                  || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+
+      // CREATE: owner submits proof — can ONLY set pending_verification
+      allow create: if isSignedIn()
+                    && request.resource.data.ownerId == request.auth.uid
+                    && request.resource.data.paymentStatus == 'pending_verification'
+                    && !('adminVerified' in request.resource.data);
+
+      // UPDATE: admin verifies/rejects | owner can update txnId/screenshot only
+      allow update: if isAdmin()
+                    || (isSignedIn()
+                        && resource.data.ownerId == request.auth.uid
+                        && !touchesAdminOnlyFields());
+
+      allow delete: if isAdmin();
     }
 
-    // ── App Account Summary ───────────────────────────────────────────────────
-    match /appAccountSummary/{docId} {
-      allow read:   if request.auth != null;
-      allow write:  if request.auth != null;
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DAILY PAYMENTS  (/dailyPayments/{ownerId_date})
+    // Internal tracking of daily commission totals
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /dailyPayments/{docId} {
+      allow read:   if isSignedIn();
+      allow write:  if isSignedIn();
     }
 
-    // ── Ratings ───────────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+    // RATINGS  (/ratings/{bookingId})
+    // Fields: bookingId, farmerId, ownerId, overall, comment, etc.
+    // ═══════════════════════════════════════════════════════════════════════════
     match /ratings/{ratingId} {
-      allow read:   if request.auth != null;
-      allow write:  if request.auth != null;
+      allow read:          if isSignedIn();
+      allow create:        if isSignedIn()
+                           && request.resource.data.farmerId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // OTP SESSIONS  (/otpSessions/{phone})
+    // Temporary OTP storage — expires in 10 minutes
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /otpSessions/{phone} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // APP CONFIG  (/appConfig/{docId})
+    // Maintenance mode flag, app settings
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /appConfig/{docId} {
+      allow read:  if isSignedIn();  // all users need to check maintenance mode
+      allow write: if isAdmin();     // only admin can flip maintenance switch
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // APP ACCOUNT  (/appAccount/{docId})
+    // Commission ledger entries — admin views, system writes
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /appAccount/{docId} {
+      allow read:   if isAdmin();
+      allow create: if isSignedIn();   // system creates entries after payment
+      allow update, delete: if isAdmin();
+    }
+
+    match /appAccountSummary/{docId} {
+      allow read:  if isAdmin();
+      allow write: if isSignedIn();    // incremented by system after each payment
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PENDING VERIFICATIONS  (/pendingVerifications/{txnId})
+    // Manual payment verification queue
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /pendingVerifications/{docId} {
+      allow read:          if isAdmin() || isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete:         if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // UPI TRANSACTIONS  (/upiTransactions/{txnId})
+    // Admin-loaded verified transaction IDs
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /upiTransactions/{docId} {
+      allow read:  if isSignedIn();  // app reads to verify txnId
+      allow write: if isAdmin();     // only admin loads verified transactions
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DEFAULT DENY — block everything not explicitly allowed above
+    // ═══════════════════════════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

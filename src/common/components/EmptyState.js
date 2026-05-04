@@ -1,20 +1,28 @@
+// src/common/components/EmptyState.js
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { COLORS } from '../../../constants/colors';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { rs, rf } from '../../../utils/responsive';
 
-export default function EmptyState({ icon = '📭', title = 'Nothing here', subtitle = '' }) {
+export default function EmptyState({ icon = '📭', title = 'Nothing here', subtitle, action, onAction }) {
   return (
-    <View style={styles.container}>
-      <Text style={styles.icon}>{icon}</Text>
-      <Text style={styles.title}>{title}</Text>
-      {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+    <View style={s.wrap}>
+      <Text style={s.icon}>{icon}</Text>
+      <Text style={s.title}>{title}</Text>
+      {subtitle ? <Text style={s.sub}>{subtitle}</Text> : null}
+      {action && onAction ? (
+        <TouchableOpacity style={s.btn} onPress={onAction} activeOpacity={0.85}>
+          <Text style={s.btnTxt}>{action}</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  icon:      { fontSize: 52, marginBottom: 16 },
-  title:     { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, textAlign: 'center' },
-  subtitle:  { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8 },
+const s = StyleSheet.create({
+  wrap:   { flex: 1, alignItems: 'center', justifyContent: 'center', padding: rs(40), minHeight: rs(200) },
+  icon:   { fontSize: rf(48), marginBottom: rs(14) },
+  title:  { fontSize: rf(18), fontWeight: '700', color: '#111827', textAlign: 'center', marginBottom: rs(8) },
+  sub:    { fontSize: rf(13), color: '#6B7280', textAlign: 'center', lineHeight: rf(20) },
+  btn:    { marginTop: rs(16), backgroundColor: '#1C7C54', borderRadius: rs(12), paddingVertical: rs(11), paddingHorizontal: rs(28) },
+  btnTxt: { color: '#fff', fontWeight: '700', fontSize: rf(14) },
 });

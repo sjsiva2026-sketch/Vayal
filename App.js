@@ -1,8 +1,12 @@
-// App.js
-import React, { Component, useState, useEffect } from 'react';
-import {
-  Text, StyleSheet, View, ActivityIndicator,
-} from 'react-native';
+// App.js — Fast loading + Admin login support
+// FIXES:
+// 1. Fonts load in background (don't block render)
+// 2. MaintenanceGate has 3s timeout — never blocks app
+// 3. Parallel font + auth loading
+// 4. Admin can log in via phone (role=admin) — no separate screen needed
+
+import React, { Component, useState, useEffect, useRef } from 'react';
+import { Text, StyleSheet, View, ActivityIndicator } from 'react-native';
 import { StatusBar }              from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider }       from 'react-native-safe-area-context';
@@ -19,130 +23,119 @@ import { useNetworkStatus }        from './utils/network';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// ── Icon fonts map ─────────────────────────────────────────────────────────────
-const ICON_FONTS = {
-  'Feather':                require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Feather.ttf'),
-  'Ionicons':               require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf'),
+// Load only 2 essential fonts first (Feather + Ionicons) — rest load later
+const ESSENTIAL_FONTS = {
+  'Feather':   require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Feather.ttf'),
+  'Ionicons':  require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf'),
+};
+const EXTRA_FONTS = {
   'MaterialIcons':          require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf'),
   'MaterialCommunityIcons': require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf'),
 };
 
-// ── Offline Banner ─────────────────────────────────────────────────────────────
-// Shown at top of app when no internet connection
-// Disappears automatically when connection restores
+// ── Offline Banner ─────────────────────────────────────────────────────────
 function OfflineBanner() {
   const isConnected = useNetworkStatus();
   if (isConnected) return null;
   return (
     <View style={ob.banner}>
-      <Text style={ob.bannerTxt}>
-        📶 No internet connection · App works offline · Data will sync when connected
-      </Text>
+      <Text style={ob.txt}>📶 No internet · App works offline · Syncs when connected</Text>
     </View>
   );
 }
-
 const ob = StyleSheet.create({
-  banner: {
-    backgroundColor: '#F59E0B',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  bannerTxt: {
-    fontSize: 11,
-    color: '#fff',
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
+  banner: { backgroundColor: '#F59E0B', paddingVertical: 7, paddingHorizontal: 16, alignItems: 'center' },
+  txt:    { fontSize: 11, color: '#fff', fontWeight: '700', textAlign: 'center' },
 });
 
-// ── Error Boundary ─────────────────────────────────────────────────────────────
+// ── Error Boundary ─────────────────────────────────────────────────────────
 class ErrorBoundary extends Component {
   state = { hasError: false };
-
   static getDerivedStateFromError() { return { hasError: true }; }
-
-  componentDidCatch(error, info) {
-    console.error('[NammaVayal] CRASH:', error.message);
-    console.error('[NammaVayal] STACK:', info.componentStack);
-  }
-
+  componentDidCatch(e, info) { console.error('[NammaVayal]', e.message, info.componentStack); }
   render() {
-    if (this.state.hasError) {
-      return (
-        <MaintenanceScreen
-          message={
-            'Namma Vayal experienced an unexpected error.\n' +
-            'Please restart the app.'
-          }
-        />
-      );
-    }
+    if (this.state.hasError) return <MaintenanceScreen message="Unexpected error. Please restart the app." />;
     return this.props.children;
   }
 }
 
-// ── Maintenance Gate ────────────────────────────────────────────────────────────
+// ── Maintenance Gate — max 3s wait ─────────────────────────────────────────
+// If Firestore doesn't respond in 3s → show app normally (not maintenance)
 function MaintenanceGate({ children }) {
-  const [checking,      setChecking]    = useState(true);
-  const [isMaintenance, setMaintenance] = useState(false);
-  const [message,       setMessage]     = useState(null);
+  const [done,    setDone]    = useState(false);
+  const [isMaint, setIsMaint] = useState(false);
+  const [msg,     setMsg]     = useState(null);
 
   useEffect(() => {
-    const unsub = listenMaintenanceStatus(({ isUnderMaintenance, message: msg }) => {
-      setMaintenance(isUnderMaintenance);
-      setMessage(msg);
-      setChecking(false);
+    // Timeout: if Firestore takes > 3s, skip maintenance check → show app
+    const timeout = setTimeout(() => setDone(true), 3000);
+
+    const unsub = listenMaintenanceStatus(({ isUnderMaintenance, message }) => {
+      clearTimeout(timeout);
+      setIsMaint(isUnderMaintenance);
+      setMsg(message);
+      setDone(true);
     });
-    return unsub;
+
+    return () => { clearTimeout(timeout); unsub(); };
   }, []);
 
-  if (checking) {
-    return (
-      <View style={ls.loadWrap}>
-        <Text style={ls.loadIcon}>🌾</Text>
-        <Text style={ls.loadAppName}>Namma Vayal</Text>
-        <ActivityIndicator color="#1C7C54" size="large" style={{ marginTop: 16 }} />
-      </View>
-    );
-  }
+  if (!done) return (
+    <View style={ls.wrap}>
+      <Text style={ls.emoji}>🌾</Text>
+      <Text style={ls.name}>Namma Vayal</Text>
+      <ActivityIndicator color="#1C7C54" size="large" style={{ marginTop: 14 }} />
+    </View>
+  );
 
-  if (isMaintenance) return <MaintenanceScreen message={message} />;
+  if (isMaint) return <MaintenanceScreen message={msg} />;
   return children;
 }
 
 const ls = StyleSheet.create({
-  loadWrap:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  loadIcon:    { fontSize: 52, marginBottom: 8 },
-  loadAppName: { fontSize: 22, fontWeight: '900', color: '#1C7C54', letterSpacing: 1 },
+  wrap:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  emoji: { fontSize: 52, marginBottom: 8 },
+  name:  { fontSize: 22, fontWeight: '900', color: '#1C7C54', letterSpacing: 1 },
 });
 
-// ── Root App ────────────────────────────────────────────────────────────────────
+// ── Root App ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [essentialReady, setEssentialReady] = useState(false);
 
   useEffect(() => {
-    async function loadFonts() {
+    let done = false;
+
+    async function bootstrap() {
       try {
-        await Font.loadAsync(ICON_FONTS);
+        // Load only essential fonts — blocks render (fast, 2 fonts)
+        await Promise.race([
+          Font.loadAsync(ESSENTIAL_FONTS),
+          new Promise(r => setTimeout(r, 2000)), // max 2s wait
+        ]);
       } catch (e) {
-        console.warn('[NammaVayal] Font load warning:', e.message);
+        console.warn('[Fonts] essential load warning:', e.message);
       } finally {
-        setFontsLoaded(true);
-        await SplashScreen.hideAsync().catch(() => {});
+        if (!done) {
+          done = true;
+          setEssentialReady(true);
+          SplashScreen.hideAsync().catch(() => {});
+        }
       }
+
+      // Load extra fonts in background (don't block render)
+      Font.loadAsync(EXTRA_FONTS).catch(() => {});
     }
-    loadFonts();
+
+    bootstrap();
+    return () => { done = true; };
   }, []);
 
-  if (!fontsLoaded) {
+  if (!essentialReady) {
     return (
-      <View style={ls.loadWrap}>
-        <Text style={ls.loadIcon}>🌾</Text>
-        <Text style={ls.loadAppName}>Namma Vayal</Text>
-        <ActivityIndicator color="#1C7C54" size="large" style={{ marginTop: 16 }} />
+      <View style={ls.wrap}>
+        <Text style={ls.emoji}>🌾</Text>
+        <Text style={ls.name}>Namma Vayal</Text>
+        <ActivityIndicator color="#1C7C54" size="large" style={{ marginTop: 14 }} />
       </View>
     );
   }
@@ -150,7 +143,6 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        {/* Offline banner — shows automatically when no internet */}
         <OfflineBanner />
         <ErrorBoundary>
           <MaintenanceGate>

@@ -5,6 +5,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "ownerId",   "order": "ASCENDING"  },
+        { "fieldPath": "status",    "order": "ASCENDING"  },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -13,7 +14,43 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "farmerId",  "order": "ASCENDING"  },
+        { "fieldPath": "status",    "order": "ASCENDING"  },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "machineId", "order": "ASCENDING"  },
+        { "fieldPath": "date",      "order": "ASCENDING"  },
+        { "fieldPath": "status",    "order": "ASCENDING"  }
+      ]
+    },
+    {
+      "collectionGroup": "machines",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taluk",    "order": "ASCENDING" },
+        { "fieldPath": "type",     "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "machines",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",   "order": "ASCENDING"  },
+        { "fieldPath": "isActive",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "role",      "order": "ASCENDING" },
+        { "fieldPath": "kycStatus", "order": "ASCENDING" }
       ]
     },
     {
@@ -22,6 +59,15 @@
       "fields": [
         { "fieldPath": "ownerId", "order": "ASCENDING" },
         { "fieldPath": "status",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "commissionPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",       "order": "ASCENDING"  },
+        { "fieldPath": "paymentStatus", "order": "ASCENDING"  },
+        { "fieldPath": "submittedAt",   "order": "DESCENDING" }
       ]
     }
   ],

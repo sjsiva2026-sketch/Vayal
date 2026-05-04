@@ -1,15 +1,90 @@
 rules_version = '2';
+// ═══════════════════════════════════════════════════════════════════════════════
+// NAMMA VAYAL — PRODUCTION STORAGE SECURITY RULES
+// Project: vayal-33b12  |  Bucket: vayal-33b12.firebasestorage.app
+//
+// HOW TO DEPLOY:
+//   Option A: Firebase Console → Storage → Rules → Paste → Publish
+//   Option B: firebase deploy --only storage
+//
+// Storage structure:
+//   /kyc/{ownerId}/profile.jpg    — KYC profile photo
+//   /kyc/{ownerId}/license.jpg    — Driving license
+//   /kyc/{ownerId}/aadhar.jpg     — Aadhar card
+//   /payments/{ownerId}/screenshot_*.jpg  — Commission payment screenshots
+// ═══════════════════════════════════════════════════════════════════════════════
+
 service firebase.storage {
   match /b/{bucket}/o {
-    // Owner document uploads (RC Book, Aadhaar, Driving License)
-    match /owners/{userId}/docs/{docType} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+
+    // ── Helper: admin UIDs (same as Firestore rules) ───────────────────────
+    function isAdmin() {
+      return request.auth != null
+          && request.auth.uid in ['REPLACE_WITH_REAL_ADMIN_UID'];
     }
-    // Profile photos
-    match /users/{userId}/profile {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+
+    // ── Helper: valid image upload constraints ─────────────────────────────
+    function isValidImage() {
+      return request.resource.size  < 5 * 1024 * 1024          // max 5 MB
+          && request.resource.contentType.matches('image/.*');  // images only
+    }
+
+    // ── Helper: auth check ─────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // KYC DOCUMENTS  /kyc/{ownerId}/{filename}
+    //   Owner uploads their own docs only
+    //   Admin can read all (for verification)
+    //   Nobody else can read
+    // ═══════════════════════════════════════════════════════════════════════
+    match /kyc/{ownerId}/{filename} {
+
+      // WRITE: owner uploads their own KYC documents only
+      // - Must be authenticated as the owner
+      // - File must be an image under 5MB
+      allow write: if isSignedIn()
+                   && request.auth.uid == ownerId
+                   && isValidImage();
+
+      // READ: owner can view their own docs | admin can view all
+      allow read: if isSignedIn()
+                  && (request.auth.uid == ownerId || isAdmin());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PAYMENT SCREENSHOTS  /payments/{ownerId}/{filename}
+    //   Owner uploads their own payment proof
+    //   Admin can read all (for payment verification)
+    // ═══════════════════════════════════════════════════════════════════════
+    match /payments/{ownerId}/{filename} {
+
+      // WRITE: owner uploads their own payment screenshot only
+      allow write: if isSignedIn()
+                   && request.auth.uid == ownerId
+                   && isValidImage();
+
+      // READ: owner can view their own | admin can view all
+      allow read: if isSignedIn()
+                  && (request.auth.uid == ownerId || isAdmin());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PROFILE PHOTOS  /profilePhotos/{filename}
+    //   Any signed-in user can upload/view
+    // ═══════════════════════════════════════════════════════════════════════
+    match /profilePhotos/{filename} {
+      allow write: if isSignedIn() && isValidImage();
+      allow read:  if isSignedIn();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DEFAULT DENY — block all other paths
+    // ═══════════════════════════════════════════════════════════════════════
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

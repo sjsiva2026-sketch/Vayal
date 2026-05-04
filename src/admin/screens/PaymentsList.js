@@ -1,112 +1,247 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Alert } from 'react-native';
-import { getDocs, collection, updateDoc, doc } from 'firebase/firestore';
-import { db }       from '../../../firebase/config';
-import PhoneConnect from '../../common/components/PhoneConnect';
-import Loader       from '../../common/components/Loader';
-import EmptyState   from '../../common/components/EmptyState';
-import { COLORS }   from '../../../constants/colors';
+// src/admin/screens/PaymentsList.js
+// ADMIN VERIFICATION SCREEN
+// Admin views screenshot → taps Verify (unlock owner) or Reject
+
+import React, { useCallback, useState } from 'react';
+import {
+  View, Text, StyleSheet, SafeAreaView, FlatList,
+  TouchableOpacity, Alert, StatusBar, Linking,
+} from 'react-native';
+import { useFocusEffect }            from '@react-navigation/native';
+import { collection, getDocs }       from 'firebase/firestore';
+import { db }                        from '../../../firebase/config';
+import { adminVerifyPayment, adminRejectPayment } from '../../../firebase/commission';
+import { COLORS }                    from '../../../constants/colors';
+import { rs, rf, H_PAD }             from '../../../utils/responsive';
+import Loader                        from '../../common/components/Loader';
+
+const STATUS = {
+  pending_verification: { bg: '#FFF3CD', color: '#92400E', label: 'Pending review' },
+  paid:                 { bg: '#DCFCE7', color: '#065F46', label: 'Verified' },
+  rejected:             { bg: '#FEE2E2', color: '#B91C1C', label: 'Rejected' },
+  pending:              { bg: '#F3F4F6', color: '#374151', label: 'Not submitted' },
+};
 
 export default function PaymentsList() {
   const [payments, setPayments] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [filter, setFilter]     = useState('all');
-  const [expanded, setExpanded] = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [filter,   setFilter]   = useState('pending_verification');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const snap = await getDocs(collection(db, 'dailyPayments'));
-    setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.date > a.date ? 1 : -1));
-    setLoading(false);
-  };
-  useEffect(() => { load(); }, []);
+    try {
+      const snap = await getDocs(collection(db, 'commissionPayments'));
+      const all  = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+      setPayments(all);
+    } catch (e) { console.warn('PaymentsList:', e.message); }
+    finally { setLoading(false); }
+  }, []);
 
-  const handleForceUnlock = async (ownerId, paymentId) => {
-    await updateDoc(doc(db, 'dailyPayments', paymentId), { status: 'paid' });
-    await updateDoc(doc(db, 'users', ownerId), { isLocked: false });
-    load();
-    Alert.alert('Unlocked', 'Owner unlocked and payment marked paid.');
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const handleVerify = (item) => {
+    Alert.alert(
+      'Verify Payment',
+      `Mark Rs.${item.amount} from this owner as PAID?\n\nThis will unlock their account immediately.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Verify & Unlock',
+          onPress: async () => {
+            try {
+              await adminVerifyPayment(item.ownerId, item.id);
+              Alert.alert('Done', 'Payment verified. Owner account unlocked.');
+              load();
+            } catch (e) { Alert.alert('Error', e.message); }
+          },
+        },
+      ]
+    );
   };
 
-  const filtered     = filter === 'all' ? payments : payments.filter(p => p.status === filter);
-  const totalRevenue = payments.filter(p => p.status === 'paid').reduce((s, p) => s + (p.totalCommission || 0), 0);
+  const handleReject = (item) => {
+    Alert.alert(
+      'Reject Payment',
+      'Reject this payment proof? Owner will need to resubmit.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await adminRejectPayment(item.ownerId, item.id);
+              Alert.alert('Done', 'Payment rejected.');
+              load();
+            } catch (e) { Alert.alert('Error', e.message); }
+          },
+        },
+      ]
+    );
+  };
+
+  const pendingCount = payments.filter(p => p.paymentStatus === 'pending_verification').length;
+  const filtered     = filter === 'all' ? payments : payments.filter(p => (p.paymentStatus || 'pending') === filter);
 
   if (loading) return <Loader />;
 
   return (
     <SafeAreaView style={s.safe}>
-      <View style={s.revenueBanner}>
-        <Text style={s.revenueLabel}>Total Revenue Collected</Text>
-        <Text style={s.revenueValue}>₹{totalRevenue}</Text>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+
+      {/* Header */}
+      <View style={s.header}>
+        <Text style={s.headerTitle}>Commission Payments</Text>
+        {pendingCount > 0 && (
+          <View style={s.pendingPill}>
+            <Text style={s.pendingPillTxt}>{pendingCount} pending</Text>
+          </View>
+        )}
       </View>
-      <View style={s.filterRow}>
-        {['all', 'paid', 'unpaid'].map((f, i) => (
-          <TouchableOpacity key={f} style={[s.tab, filter === f && s.tabOn, i > 0 && { marginLeft: 8 }]} onPress={() => setFilter(f)}>
-            <Text style={[s.tabTxt, filter === f && s.tabTxtOn]}>
-              {f === 'all' ? '📋 All' : f === 'paid' ? '✅ Paid' : '❌ Unpaid'}
-            </Text>
+
+      {/* Filter tabs */}
+      <View style={s.tabRow}>
+        {[
+          { key: 'pending_verification', label: `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}` },
+          { key: 'paid',    label: 'Verified' },
+          { key: 'rejected',label: 'Rejected' },
+          { key: 'all',     label: 'All' },
+        ].map(tab => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[s.tab, filter === tab.key && s.tabActive]}
+            onPress={() => setFilter(tab.key)}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.tabTxt, filter === tab.key && s.tabTxtActive]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
+
       <FlatList
         data={filtered}
         keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 16, flexGrow: 1 }}
-        ListEmptyComponent={<EmptyState icon="💰" title="No payments found" />}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={s.card} onPress={() => setExpanded(expanded === item.id ? null : item.id)} activeOpacity={0.9}>
-            <View style={s.cardHeader}>
-              <Text style={s.date}>📅 {item.date}</Text>
-              <View style={[s.badge, { backgroundColor: item.status === 'paid' ? COLORS.success : COLORS.error }]}>
-                <Text style={s.badgeTxt}>{item.status?.toUpperCase()}</Text>
+        contentContainerStyle={{ padding: H_PAD, flexGrow: 1, paddingBottom: rs(40) }}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={s.emptyBox}>
+            <Text style={s.emptyIcon}>💰</Text>
+            <Text style={s.emptyTxt}>No {filter === 'all' ? '' : filter.replace('_', ' ')} payments</Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const st   = STATUS[item.paymentStatus] || STATUS.pending;
+          const date = item.submittedAt?.seconds
+            ? new Date(item.submittedAt.seconds * 1000).toLocaleString('en-IN')
+            : item.date || '—';
+          const isPending = item.paymentStatus === 'pending_verification';
+
+          return (
+            <View style={s.card}>
+              {/* Top row */}
+              <View style={s.cardTop}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.cardAmount}>Rs.{item.amount || 0}</Text>
+                  <Text style={s.cardDate}>{date}</Text>
+                </View>
+                <View style={[s.statusPill, { backgroundColor: st.bg }]}>
+                  <Text style={[s.statusTxt, { color: st.color }]}>{st.label}</Text>
+                </View>
               </View>
-            </View>
-            <Text style={s.meta}>Owner: {item.ownerName || item.ownerId}</Text>
-            <View style={s.amountsRow}>
-              <Text style={s.hectare}>🌾 {item.totalHectare} ha</Text>
-              <Text style={s.commission}>₹{item.totalCommission}</Text>
-            </View>
-            {item.ownerPhone && <Text style={s.phone}>📞 +91 {item.ownerPhone}</Text>}
-            {expanded === item.id && (
-              <View style={s.expanded}>
-                {item.ownerPhone && <PhoneConnect phone={item.ownerPhone} name={item.ownerName || 'Owner'} role="Machine Owner 🚜" />}
-                {item.status === 'unpaid' && (
-                  <TouchableOpacity style={s.unlockBtn} onPress={() => handleForceUnlock(item.ownerId, item.id)}>
-                    <Text style={s.unlockTxt}>🔓 Force Unlock & Mark Paid</Text>
+
+              {/* Details */}
+              <View style={s.detailBox}>
+                <View style={s.detailRow}>
+                  <Text style={s.detailKey}>Transaction ID</Text>
+                  <Text style={s.detailVal} selectable>{item.transactionId || '—'}</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailKey}>Owner</Text>
+                  <Text style={s.detailVal} numberOfLines={1}>{item.ownerId || '—'}</Text>
+                </View>
+              </View>
+
+              {/* Screenshot button */}
+              {item.paymentProofUrl ? (
+                <TouchableOpacity
+                  style={s.screenshotBtn}
+                  onPress={() => Linking.openURL(item.paymentProofUrl).catch(() => Alert.alert('Error', 'Cannot open image'))}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.screenshotBtnTxt}>View Payment Screenshot</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={s.noScreenshot}>
+                  <Text style={s.noScreenshotTxt}>No screenshot uploaded yet</Text>
+                </View>
+              )}
+
+              {/* Admin action buttons — ONLY for pending_verification */}
+              {isPending && (
+                <View style={s.actionRow}>
+                  <TouchableOpacity style={s.verifyBtn} onPress={() => handleVerify(item)} activeOpacity={0.88}>
+                    <Text style={s.verifyBtnTxt}>Verify & Unlock</Text>
                   </TouchableOpacity>
-                )}
-              </View>
-            )}
-            <Text style={s.hint}>{expanded === item.id ? '▲ Collapse' : '▼ Details & Contact'}</Text>
-          </TouchableOpacity>
-        )}
+                  <TouchableOpacity style={s.rejectBtn} onPress={() => handleReject(item)} activeOpacity={0.88}>
+                    <Text style={s.rejectBtnTxt}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Already decided */}
+              {item.paymentStatus === 'paid' && (
+                <View style={s.decidedBox}>
+                  <Text style={s.decidedTxt}>Verified — owner unlocked</Text>
+                </View>
+              )}
+              {item.paymentStatus === 'rejected' && (
+                <View style={[s.decidedBox, { backgroundColor: '#FEE2E2' }]}>
+                  <Text style={[s.decidedTxt, { color: '#B91C1C' }]}>Rejected — owner must resubmit</Text>
+                </View>
+              )}
+            </View>
+          );
+        }}
       />
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe:          { flex: 1, backgroundColor: COLORS.background },
-  revenueBanner: { backgroundColor: COLORS.primaryDark, padding: 20, alignItems: 'center' },
-  revenueLabel:  { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
-  revenueValue:  { fontSize: 32, fontWeight: '900', color: COLORS.white, marginTop: 4 },
-  filterRow:     { flexDirection: 'row', padding: 12 },
-  tab:           { flex: 1, paddingVertical: 8, borderRadius: 20, alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
-  tabOn:         { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  tabTxt:        { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
-  tabTxtOn:      { color: COLORS.white },
-  card:          { backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 12, elevation: 3 },
-  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  date:          { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
-  badge:         { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
-  badgeTxt:      { fontSize: 10, color: COLORS.white, fontWeight: '700' },
-  meta:          { fontSize: 12, color: COLORS.textSecondary, marginBottom: 6 },
-  amountsRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  hectare:       { fontSize: 13, color: COLORS.textSecondary },
-  commission:    { fontSize: 18, fontWeight: '800', color: COLORS.secondary },
-  phone:         { fontSize: 12, color: COLORS.primary, fontWeight: '600', marginTop: 4 },
-  expanded:      { marginTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12 },
-  unlockBtn:     { backgroundColor: COLORS.warning, borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
-  unlockTxt:     { color: COLORS.white, fontWeight: '700', fontSize: 14 },
-  hint:          { fontSize: 11, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8 },
+  safe:             { flex: 1, backgroundColor: '#F4F6F8' },
+  header:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: H_PAD, paddingVertical: rs(14), backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerTitle:      { fontSize: rf(20), fontWeight: '900', color: '#111827' },
+  pendingPill:      { backgroundColor: '#FEE2E2', borderRadius: rs(12), paddingHorizontal: rs(12), paddingVertical: rs(4) },
+  pendingPillTxt:   { fontSize: rf(12), color: '#B91C1C', fontWeight: '800' },
+  tabRow:           { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingHorizontal: rs(10), paddingVertical: rs(8) },
+  tab:              { paddingHorizontal: rs(12), paddingVertical: rs(6), borderRadius: rs(20), marginRight: rs(6), backgroundColor: '#F4F5F7' },
+  tabActive:        { backgroundColor: COLORS.primary },
+  tabTxt:           { fontSize: rf(12), fontWeight: '700', color: COLORS.textSecondary },
+  tabTxtActive:     { color: '#fff' },
+  emptyBox:         { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: rs(60) },
+  emptyIcon:        { fontSize: rf(40), marginBottom: rs(10) },
+  emptyTxt:         { fontSize: rf(15), color: COLORS.textSecondary },
+  card:             { backgroundColor: '#fff', borderRadius: rs(16), marginBottom: rs(12), padding: rs(16), elevation: 2 },
+  cardTop:          { flexDirection: 'row', alignItems: 'flex-start', marginBottom: rs(12) },
+  cardAmount:       { fontSize: rf(24), fontWeight: '900', color: '#111827' },
+  cardDate:         { fontSize: rf(12), color: COLORS.textSecondary, marginTop: rs(2) },
+  statusPill:       { borderRadius: rs(10), paddingHorizontal: rs(10), paddingVertical: rs(5) },
+  statusTxt:        { fontSize: rf(12), fontWeight: '800' },
+  detailBox:        { backgroundColor: '#F9FAFB', borderRadius: rs(10), padding: rs(12), marginBottom: rs(12) },
+  detailRow:        { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: rs(4) },
+  detailKey:        { fontSize: rf(12), color: COLORS.textSecondary },
+  detailVal:        { fontSize: rf(12), fontWeight: '700', color: '#111827', maxWidth: '55%', textAlign: 'right' },
+  screenshotBtn:    { backgroundColor: '#EFF6FF', borderRadius: rs(10), paddingVertical: rs(12), alignItems: 'center', marginBottom: rs(12), borderWidth: 1, borderColor: '#BFDBFE' },
+  screenshotBtnTxt: { fontSize: rf(14), fontWeight: '700', color: '#1D4ED8' },
+  noScreenshot:     { backgroundColor: '#F9FAFB', borderRadius: rs(10), paddingVertical: rs(12), alignItems: 'center', marginBottom: rs(12) },
+  noScreenshotTxt:  { fontSize: rf(13), color: COLORS.textSecondary },
+  actionRow:        { flexDirection: 'row', gap: rs(10) },
+  verifyBtn:        { flex: 1, backgroundColor: '#DCFCE7', borderRadius: rs(10), paddingVertical: rs(13), alignItems: 'center', borderWidth: 1, borderColor: '#22C55E' },
+  verifyBtnTxt:     { fontSize: rf(14), fontWeight: '800', color: '#065F46' },
+  rejectBtn:        { flex: 1, backgroundColor: '#FEE2E2', borderRadius: rs(10), paddingVertical: rs(13), alignItems: 'center', borderWidth: 1, borderColor: '#EF4444' },
+  rejectBtnTxt:     { fontSize: rf(14), fontWeight: '800', color: '#B91C1C' },
+  decidedBox:       { backgroundColor: '#DCFCE7', borderRadius: rs(10), paddingVertical: rs(10), alignItems: 'center' },
+  decidedTxt:       { fontSize: rf(13), fontWeight: '700', color: '#065F46' },
 });

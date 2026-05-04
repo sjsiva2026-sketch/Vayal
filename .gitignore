@@ -1,30 +1,46 @@
-# Dependencies
-node_modules/
-
 # Expo
 .expo/
 dist/
 web-build/
 
-# Firebase secrets — NEVER commit these
-google-services.json
+# Node
+node_modules/
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase — google-services.json must be tracked for EAS Build
+# google-services.json   ← removed from ignore so EAS can upload it
 GoogleService-Info.plist
 .env
 .env.local
 .env.production
 
-# OS files
-.DS_Store
-Thumbs.db
+# Debug / temp files
+testBooking.js
+IMPORT_MAP.js
+*.bat
+DO_THIS_NOW.txt
+FINAL_FIREBASE_SETUP.txt
+FIREBASE_DO_NOW.txt
+PATH_REFERENCE.txt
+COPY_IMAGES_NOW.txt
+START_HERE.md
+INSTALL.md
+SETUP.md
+NEXT_STEPS.md
+FIX_COMMANDS.md
+CLEAR_AND_RUN.bat
 
-# Logs
-*.log
-npm-debug.log*
-
-# Editor
-.vscode/
-.idea/
-
-# Build outputs
+# Build
 android/
 ios/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
