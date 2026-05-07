@@ -2,7 +2,7 @@
   "expo": {
     "name": "Namma Vayal",
     "slug": "namma-vayal",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#1C7C54",
@@ -12,16 +12,11 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.vayal.app",
-      "infoPlist": {
-        "NSCameraUsageDescription": "Namma Vayal needs camera access to capture KYC documents and payment screenshots.",
-        "NSPhotoLibraryUsageDescription": "Namma Vayal needs photo library access to upload KYC documents and payment screenshots.",
-        "NSPhotoLibraryAddUsageDescription": "Namma Vayal needs permission to save photos."
-      }
+      "bundleIdentifier": "com.vayal.app"
     },
     "android": {
       "package": "com.vayal.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#1C7C54"
@@ -33,35 +28,25 @@
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.VIBRATE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.VIBRATE"
       ],
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [
-            {
-              "scheme": "nammavayal"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "data": [{ "scheme": "nammavayal" }],
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },
-    "web": {
-      "bundler": "metro"
-    },
+    "web": { "bundler": "metro" },
     "scheme": "nammavayal",
     "plugins": [
       "expo-font",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Namma Vayal needs photo access to upload KYC documents and payment screenshots.",
+          "photosPermission": "Namma Vayal needs photo access to upload KYC and payment screenshots.",
           "cameraPermission": "Namma Vayal needs camera access to capture documents."
         }
       ]

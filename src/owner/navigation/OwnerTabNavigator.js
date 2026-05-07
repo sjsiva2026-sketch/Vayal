@@ -1,17 +1,16 @@
 // src/owner/navigation/OwnerTabNavigator.js
-// KEY RULE:
-//   isWithin24h = true  → "Pay" tab COMPLETELY HIDDEN from bottom nav
-//   isLocked = true     → Only PayCommission accessible (handled by AppNavigator)
-//   pendingCount        → Real-time badge on Requests tab
-
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { FIcon, MCIcon }            from '../../../utils/icons';
-import { COLORS }                   from '../../../constants/colors';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  Platform, StatusBar,
+} from 'react-native';
+import { createBottomTabNavigator }  from '@react-navigation/bottom-tabs';
+import { FIcon, MCIcon }             from '../../../utils/icons';
+import { COLORS }                    from '../../../constants/colors';
 import { listenBookingsByOwner }     from '../../../firebase/firestore';
 import { listenOwnerLockState }      from '../../../firebase/commission';
 import { useUser }                   from '../../../context/UserContext';
+import { rs, rf, BOTTOM_NAV_H }     from '../../../utils/responsive';
 
 import BookingRequestsScreen  from '../screens/BookingRequests';
 import MachineListOwnerScreen from '../screens/MachineListOwner';
@@ -23,36 +22,34 @@ const Tab     = createBottomTabNavigator();
 const PRIMARY = COLORS.primary;
 
 function CustomTabBar({ state, navigation, pendingCount, showPayTab }) {
-  // Build tabs dynamically — hide Pay tab before 24h
   const ALL_TABS = [
     {
-      name: 'Requests',
-      label: 'Requests',
-      renderIcon: (c) => <FIcon name="bell" size={22} color={c} fallback="🔔" />,
-      badge: pendingCount,
+      name:       'Requests',
+      label:      'Requests',
+      renderIcon: (c) => <FIcon name="bell" size={rs(22)} color={c} fallback="🔔" />,
+      badge:      pendingCount,
     },
     {
-      name: 'MyMachines',
-      label: 'Machines',
-      renderIcon: (c) => <MCIcon name="tractor" size={22} color={c} fallback="🚜" />,
+      name:       'MyMachines',
+      label:      'Machines',
+      renderIcon: (c) => <MCIcon name="tractor" size={rs(22)} color={c} fallback="🚜" />,
     },
     {
-      name: 'AddMachine',
-      label: 'Add',
-      isCenter: true,
-      renderIcon: () => <FIcon name="plus" size={24} color="#fff" fallback="+" />,
+      name:       'AddMachine',
+      label:      'Add',
+      isCenter:   true,
+      renderIcon: () => <FIcon name="plus" size={rs(24)} color="#fff" fallback="+" />,
     },
     {
-      name: 'TodaysWork',
-      label: "Today",
-      renderIcon: (c) => <FIcon name="bar-chart-2" size={22} color={c} fallback="📊" />,
+      name:       'TodaysWork',
+      label:      'Today',
+      renderIcon: (c) => <FIcon name="bar-chart-2" size={rs(22)} color={c} fallback="📊" />,
     },
-    // Pay tab — only shown when 24h has passed (showPayTab = true)
     ...(showPayTab ? [{
-      name: 'PayCommissionTab',
-      label: 'Pay',
-      renderIcon: (c) => <FIcon name="credit-card" size={22} color={c} fallback="💳" />,
-      lockBadge: true,
+      name:       'PayCommissionTab',
+      label:      'Pay',
+      renderIcon: (c) => <FIcon name="credit-card" size={rs(22)} color={c} fallback="💳" />,
+      lockBadge:  true,
     }] : []),
   ];
 
@@ -65,8 +62,8 @@ function CustomTabBar({ state, navigation, pendingCount, showPayTab }) {
 
         const onPress = () => {
           const event = navigation.emit({
-            type:             'tabPress',
-            target:           state.routes[routeIndex]?.key || '',
+            type: 'tabPress',
+            target: state.routes[routeIndex]?.key || '',
             canPreventDefault: true,
           });
           if (!focused && !event.defaultPrevented && routeIndex !== -1) {
@@ -82,26 +79,22 @@ function CustomTabBar({ state, navigation, pendingCount, showPayTab }) {
           );
         }
 
-        const badgeCount = tab.badge ?? 0;
-        const showBadge  = badgeCount > 0;
-        const showLock   = tab.lockBadge;
-
         return (
           <TouchableOpacity key={tab.name} style={tb.tab} activeOpacity={0.7} onPress={onPress}>
-            <View style={[tb.iconWrap, focused && tb.iconWrapFocused]}>
+            <View style={[tb.iconWrap, focused && tb.iconWrapActive]}>
               {tab.renderIcon(color)}
-              {showBadge && (
+              {(tab.badge ?? 0) > 0 && (
                 <View style={tb.badge}>
-                  <Text style={tb.badgeTxt}>{badgeCount > 9 ? '9+' : badgeCount}</Text>
+                  <Text style={tb.badgeTxt}>{(tab.badge ?? 0) > 9 ? '9+' : tab.badge}</Text>
                 </View>
               )}
-              {showLock && !showBadge && (
+              {tab.lockBadge && !(tab.badge > 0) && (
                 <View style={[tb.badge, { backgroundColor: '#EF4444' }]}>
-                  <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>!</Text>
+                  <Text style={[tb.badgeTxt, { fontSize: rf(8) }]}>!</Text>
                 </View>
               )}
             </View>
-            <Text style={[tb.label, focused && tb.labelFocused]} numberOfLines={1}>{tab.label}</Text>
+            <Text style={[tb.label, focused && tb.labelActive]} numberOfLines={1}>{tab.label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -110,26 +103,34 @@ function CustomTabBar({ state, navigation, pendingCount, showPayTab }) {
 }
 
 const tb = StyleSheet.create({
-  bar:             { flexDirection: 'row', backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E8E8E8', paddingBottom: Platform.OS === 'ios' ? 20 : 8, paddingTop: 8, alignItems: 'flex-end', elevation: 16 },
-  tab:             { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 2 },
-  centerTab:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 4 },
-  fab:             { width: 48, height: 48, borderRadius: 24, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center', elevation: 6 },
-  iconWrap:        { width: 44, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 10, position: 'relative' },
-  iconWrapFocused: { backgroundColor: '#E8F5EE' },
-  label:           { fontSize: 10, color: '#9CA3AF', fontWeight: '500', marginTop: 2 },
-  labelFocused:    { color: PRIMARY, fontWeight: '700' },
-  badge:           { position: 'absolute', top: -5, right: -5, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5, borderColor: '#fff' },
-  badgeTxt:        { fontSize: 9, color: '#fff', fontWeight: '900' },
+  bar: {
+    flexDirection:   'row',
+    backgroundColor: '#fff',
+    borderTopWidth:  1,
+    borderTopColor:  '#EBEBEB',
+    height:          BOTTOM_NAV_H,
+    paddingBottom:   Platform.OS === 'android' ? rs(6) : rs(20),
+    paddingTop:      rs(8),
+    alignItems:      'center',
+    elevation:       16,
+  },
+  tab:           { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  centerTab:     { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  fab:           { width: rs(48), height: rs(48), borderRadius: rs(24), backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center', elevation: 6 },
+  iconWrap:      { width: rs(44), height: rs(30), alignItems: 'center', justifyContent: 'center', borderRadius: rs(10), position: 'relative' },
+  iconWrapActive:{ backgroundColor: '#E8F5EE' },
+  label:         { fontSize: rf(10), color: '#9CA3AF', fontWeight: '500', marginTop: rs(2) },
+  labelActive:   { color: PRIMARY, fontWeight: '700' },
+  badge:         { position: 'absolute', top: -rs(5), right: -rs(5), minWidth: rs(17), height: rs(17), borderRadius: rs(9), backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(3), borderWidth: 1.5, borderColor: '#fff' },
+  badgeTxt:      { fontSize: rf(9), color: '#fff', fontWeight: '900' },
 });
 
-export default function OwnerTabNavigator({ navigation: stackNav }) {
+export default function OwnerTabNavigator() {
   const { userProfile } = useUser();
   const uid             = userProfile?.id || '';
-
   const [pendingCount, setPendingCount] = useState(0);
-  const [showPayTab,   setShowPayTab]   = useState(false);  // hidden before 24h
+  const [showPayTab,   setShowPayTab]   = useState(false);
 
-  // Real-time pending booking count
   useEffect(() => {
     if (!uid) return;
     const unsub = listenBookingsByOwner(uid, (bookings) => {
@@ -138,34 +139,30 @@ export default function OwnerTabNavigator({ navigation: stackNav }) {
     return unsub;
   }, [uid]);
 
-  // Real-time commission state — show Pay tab only after 24h window passes
   useEffect(() => {
     if (!uid) return;
     const unsub = listenOwnerLockState(uid, (state) => {
-      // showPayTab = true ONLY when isLocked OR after 24h (not within24h)
-      const shouldShow = !state.isWithin24h && !!state.otpVerifiedAt && state.paymentStatus !== 'paid';
-      setShowPayTab(shouldShow);
+      setShowPayTab(!state.isWithin24h && !!state.otpVerifiedAt && state.paymentStatus !== 'paid');
     });
     return unsub;
   }, [uid]);
 
   return (
     <Tab.Navigator
-      tabBar={(props) => (
-        <CustomTabBar {...props} pendingCount={pendingCount} showPayTab={showPayTab} />
-      )}
+      tabBar={(props) => <CustomTabBar {...props} pendingCount={pendingCount} showPayTab={showPayTab} />}
       screenOptions={({ navigation }) => ({
         headerShown:      true,
-        headerStyle:      { backgroundColor: '#fff', elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+        headerStyle:      { backgroundColor: '#fff', elevation: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
         headerTintColor:  '#111827',
-        headerTitleStyle: { fontWeight: '800', fontSize: 20, color: '#111827' },
+        headerTitleStyle: { fontWeight: '800', fontSize: rf(18), color: '#111827' },
+        headerStatusBarHeight: Platform.OS === 'android' ? StatusBar.currentHeight : undefined,
         headerRight: () => (
           <TouchableOpacity
-            style={{ marginRight: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: '#E8F5EE', alignItems: 'center', justifyContent: 'center' }}
+            style={{ marginRight: rs(16), width: rs(38), height: rs(38), borderRadius: rs(19), backgroundColor: '#E8F5EE', alignItems: 'center', justifyContent: 'center' }}
             onPress={() => navigation.navigate('OwnerProfile')}
             activeOpacity={0.8}
           >
-            <FIcon name="user" size={20} color={PRIMARY} fallback="👤" />
+            <FIcon name="user" size={rs(20)} color={PRIMARY} fallback="👤" />
           </TouchableOpacity>
         ),
       })}

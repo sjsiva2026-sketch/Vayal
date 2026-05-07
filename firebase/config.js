@@ -1,17 +1,15 @@
 // firebase/config.js
 // ─────────────────────────────────────────────────────────────────────────────
-// FINAL FIX for "Could not reach Cloud Firestore backend"
+// FRESH FIREBASE SETUP — New Firestore DB (Blaze Plan)
+// Project:  vayal-33b12
+// Package:  com.vayal.app
+// Bucket:   vayal-33b12.firebasestorage.app
 //
-// ROOT CAUSES (all fixed here):
-// 1. experimentalAutoDetectLongPolling removed in firebase ^10.x — causes
-//    "INTERNAL ASSERTION FAILED: Unexpected state"
-// 2. Both long-polling flags together → assertion crash
-// 3. Anonymous auth failing → Firestore connection drops
-//
-// SOLUTION:
-// • Remove ALL experimental flags — use plain getFirestore() for React Native
-// • firebase ^10.8 JS SDK connects fine without any special transport flags
-// • Auth uses getReactNativePersistence(AsyncStorage) — stable sessions
+// KEY RULES:
+//  • NO experimentalFlags — causes INTERNAL ASSERTION FAILED on React Native
+//  • Plain getFirestore(app) — works perfectly on firebase ^10.8
+//  • Anonymous signIn for Firestore rules (request.auth != null)
+//  • AsyncStorage persistence for auth sessions
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
@@ -20,11 +18,11 @@ import {
   getAuth,
   getReactNativePersistence,
 } from 'firebase/auth';
-import { getFirestore }  from 'firebase/firestore';
-import { getStorage }    from 'firebase/storage';
-import AsyncStorage      from '@react-native-async-storage/async-storage';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage }   from 'firebase/storage';
+import AsyncStorage     from '@react-native-async-storage/async-storage';
 
-// ── Firebase config — matches google-services.json ────────────────────────
+// ── Exact values from google-services.json ─────────────────────────────────
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyAuLdDFLj56oSwkD7EtemKzHfCDklRJMN4',
   authDomain:        'vayal-33b12.firebaseapp.com',
@@ -34,12 +32,12 @@ const FIREBASE_CONFIG = {
   appId:             '1:881016543795:android:d567faf49f9def975de146',
 };
 
-// ── App singleton ──────────────────────────────────────────────────────────
+// ── Singleton app ──────────────────────────────────────────────────────────
 const app = getApps().length === 0
   ? initializeApp(FIREBASE_CONFIG)
   : getApp();
 
-// ── Auth — AsyncStorage persistence ───────────────────────────────────────
+// ── Auth — AsyncStorage keeps user logged in after app restart ─────────────
 let _auth = null;
 export const getFirebaseAuth = () => {
   if (_auth) return _auth;
@@ -48,14 +46,16 @@ export const getFirebaseAuth = () => {
       persistence: getReactNativePersistence(AsyncStorage),
     });
   } catch {
+    // Already initialized
     _auth = getAuth(app);
   }
   return _auth;
 };
 
-// ── Firestore — plain getFirestore, no experimental flags ─────────────────
-// firebase ^10.8 React Native works with plain getFirestore()
-// No localCache / no experimentalFlags needed — they cause assertion errors
-export const db      = getFirestore(app);
+// ── Firestore — plain, no flags ────────────────────────────────────────────
+export const db = getFirestore(app);
+
+// ── Storage — Blaze plan required ─────────────────────────────────────────
 export const storage = getStorage(app);
+
 export default app;
