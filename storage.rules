@@ -1,88 +1,45 @@
 rules_version = '2';
-// ─────────────────────────────────────────────────────────────────────────────
-// NAMMA VAYAL — PRODUCTION STORAGE RULES
-// Bucket: vayal-33b12.firebasestorage.app
-//
-// PATHS:
-//   /payments/{ownerId}/     ← commission payment screenshots
-//   /kyc/{ownerId}/          ← KYC documents (profile, license, aadhar)
-//   /profiles/{userId}/      ← profile photos
-//
-// HOW TO DEPLOY:
-//   Firebase Console → Storage → Rules → Paste → Publish
-// ─────────────────────────────────────────────────────────────────────────────
-
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // ── Admin UIDs (same as Firestore rules) ───────────────────────────────
     function isAdmin() {
       return request.auth != null
-          && request.auth.uid in ['PASTE_ADMIN_UID_HERE'];
+        && request.auth.uid in ['PASTE_ADMIN_UID_HERE'];
     }
-
-    // ── Valid image upload constraints ─────────────────────────────────────
-    function isValidImage() {
-      return request.resource.size < 5 * 1024 * 1024          // max 5 MB
-          && request.resource.contentType.matches('image/.*'); // images only
-    }
-
     function isSignedIn() { return request.auth != null; }
+    function isValidImage() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // PAYMENT SCREENSHOTS  /payments/{ownerId}/{filename}
-    // Owner uploads own payment proof for admin verification
-    // ══════════════════════════════════════════════════════════════════════════
     match /payments/{ownerId}/{filename} {
-      // Only owner uploads their own screenshots
-      allow write: if isSignedIn()
-                   && request.auth.uid == ownerId
-                   && isValidImage();
-      // Owner + admin can read
-      allow read:  if isSignedIn()
-                   && (request.auth.uid == ownerId || isAdmin());
-      // Nobody can delete (audit trail)
+      allow write:  if isSignedIn()
+        && request.auth.uid == ownerId && isValidImage();
+      allow read:   if isSignedIn()
+        && (request.auth.uid == ownerId || isAdmin());
       allow delete: if isAdmin();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // KYC DOCUMENTS  /kyc/{ownerId}/{filename}
-    // Owner uploads: profile.jpg, license.jpg, aadhar.jpg
-    // ══════════════════════════════════════════════════════════════════════════
     match /kyc/{ownerId}/{filename} {
-      // Owner uploads only their own KYC docs
-      allow write: if isSignedIn()
-                   && request.auth.uid == ownerId
-                   && isValidImage();
-      // Owner + admin can view
-      allow read:  if isSignedIn()
-                   && (request.auth.uid == ownerId || isAdmin());
+      allow write:  if isSignedIn()
+        && request.auth.uid == ownerId && isValidImage();
+      allow read:   if isSignedIn()
+        && (request.auth.uid == ownerId || isAdmin());
       allow delete: if isAdmin();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // PROFILE PHOTOS  /profiles/{userId}/{filename}
-    // Any authenticated user can upload their own profile photo
-    // ══════════════════════════════════════════════════════════════════════════
     match /profiles/{userId}/{filename} {
       allow write:  if isSignedIn()
-                    && request.auth.uid == userId
-                    && isValidImage();
+        && request.auth.uid == userId && isValidImage();
       allow read:   if isSignedIn();
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 
-    // Legacy path (profile photos uploaded before path change)
     match /profilePhotos/{filename} {
       allow write: if isSignedIn() && isValidImage();
       allow read:  if isSignedIn();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // DEFAULT DENY — block all other paths
-    // ══════════════════════════════════════════════════════════════════════════
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
+    match /{allPaths=**} { allow read, write: if false; }
   }
 }

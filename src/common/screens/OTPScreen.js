@@ -1,6 +1,12 @@
 // src/common/screens/OTPScreen.js
-// logo.png (512×512px) — LOGO_CONTAINER=80dp circle, LOGO_SIZE=64dp image
-// OTP keyboard fix: full-size transparent TextInput
+// FIXED: KYC check after OTP verify
+//
+// FLOW:
+//   Farmer → FarmerHome (direct)
+//   Admin  → AdminDashboard (direct)
+//   Owner  (new user)     → ProfileSetup
+//   Owner  (not verified) → KycScreen  ← FIX
+//   Owner  (verified)     → OwnerHome
 
 import React, { useState, useRef, useCallback } from 'react';
 import {
@@ -8,25 +14,40 @@ import {
   TextInput, StatusBar, ActivityIndicator, Keyboard,
   KeyboardAvoidingView, ScrollView, Platform, Dimensions, Image,
 } from 'react-native';
-import { CommonActions } from '@react-navigation/native';
-import { verifyOTP }     from '../../../firebase/auth';
-import { getUser }       from '../../../firebase/firestore';
-import { useAuth }       from '../../../context/AuthContext';
-import { useUser }       from '../../../context/UserContext';
-import { FIcon }         from '../../../utils/icons';
-import { ICONS }         from '../../../assets/index';
-import { IMG }           from '../../../utils/imageSize';
+import { CommonActions }  from '@react-navigation/native';
+import { verifyOTP }      from '../../../firebase/auth';
+import { getUser }        from '../../../firebase/firestore';
+import { useAuth }        from '../../../context/AuthContext';
+import { useUser }        from '../../../context/UserContext';
+import { FIcon }          from '../../../utils/icons';
+import { ICONS }          from '../../../assets/index';
+import { IMG }            from '../../../utils/imageSize';
 
-const PRIMARY      = '#1C7C54';
+const PRIMARY = '#1C7C54';
 const { width: W } = Dimensions.get('window');
-const scale        = W / 375;
-const rf           = (dp) => Math.round(dp * scale);
-
-// OTP box: 6 boxes, padH=48, gaps=40
+const rf = (dp) => Math.round((W / 375) * dp);
 const BOX_W = Math.floor((W - 48 - 40) / 6);
 const BOX_H = BOX_W + 10;
 
-const ROLE_HOME = { farmer: 'FarmerHome', owner: 'OwnerHome', admin: 'AdminDashboard' };
+// ─────────────────────────────────────────────────────────────────────────────
+// NAVIGATION DECISION — called after Firestore profile loaded
+// This is the ONLY place that decides where owner goes
+// ─────────────────────────────────────────────────────────────────────────────
+function getDestination(profile) {
+  const role = profile?.role;
+
+  if (role === 'farmer') return 'FarmerHome';
+  if (role === 'admin')  return 'AdminDashboard';
+
+  if (role === 'owner') {
+    // Owner MUST be verified by admin before accessing OwnerHome
+    const verified = profile.isVerified === true
+                  && profile.kycStatus   === 'verified';
+    return verified ? 'OwnerHome' : 'KycScreen';
+  }
+
+  return 'RoleSelect';
+}
 
 export default function OTPScreen({ navigation, route }) {
   const { phone, role, devOTP }                     = route.params || {};
@@ -37,8 +58,8 @@ export default function OTPScreen({ navigation, route }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
   const [timer,   setTimer]   = useState(60);
-  const inputRef              = useRef(null);
-  const busyRef               = useRef(false);
+  const inputRef  = useRef(null);
+  const busyRef   = useRef(false);
 
   React.useEffect(() => {
     if (timer <= 0) return;
@@ -46,34 +67,55 @@ export default function OTPScreen({ navigation, route }) {
     return () => clearInterval(id);
   }, [timer]);
 
-  const goHome = (r) =>
-    navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: ROLE_HOME[r] || 'RoleSelect' }] }));
+  const goTo = (routeName) =>
+    navigation.dispatch(CommonActions.reset({
+      index: 0,
+      routes: [{ name: routeName }],
+    }));
 
   const doVerify = async (code) => {
     const clean = (code ?? otp).trim();
     if (clean.length !== 6 || busyRef.current || loading) return;
     busyRef.current = true;
     Keyboard.dismiss();
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
+
     try {
       const authUser = await verifyOTP(clean);
-      const profile  = await getUser(authUser.uid);
+
+      // Always fetch fresh profile from Firestore
+      const profile = await getUser(authUser.uid);
+
       if (profile) {
-        setUser(authUser); setAuthProfile(profile); setUserProfile(profile); goHome(profile.role);
-      } else {
+        // Existing user → set context → route by role + KYC status
         setUser(authUser);
-        navigation.navigate('ProfileSetup', { uid: authUser.uid, phone, role });
+        setAuthProfile(profile);
+        setUserProfile(profile);
+        goTo(getDestination(profile));
+      } else {
+        // Brand new user → ProfileSetup
+        setUser(authUser);
+        navigation.navigate('ProfileSetup', {
+          uid:   authUser.uid,
+          phone: phone,
+          role:  role,
+        });
       }
     } catch (e) {
       setError(e.message || 'Verification failed. Try again.');
       setOtp('');
       setTimeout(() => inputRef.current?.focus(), 150);
-    } finally { setLoading(false); busyRef.current = false; }
+    } finally {
+      setLoading(false);
+      busyRef.current = false;
+    }
   };
 
   const handleChange = (text) => {
     const digits = text.replace(/\D/g, '').slice(0, 6);
-    setOtp(digits); setError('');
+    setOtp(digits);
+    setError('');
     if (digits.length === 6) doVerify(digits);
   };
 
@@ -82,24 +124,31 @@ export default function OTPScreen({ navigation, route }) {
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <KeyboardAvoidingView style={s.kav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
-
-          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+      <KeyboardAvoidingView
+        style={s.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <TouchableOpacity
+            style={s.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
             <FIcon name="arrow-left" size={22} color="#111827" fallback="←" />
           </TouchableOpacity>
 
+          {/* Logo + title */}
           <View style={s.topSection}>
-            {/*
-              logo.png: 512×512px source
-              Container: LOGO_CONTAINER (80dp) circle
-              Image: LOGO_SIZE (64dp) — renders 192px at xxhdpi
-              512px source → 37% scale → very sharp ✅
-            */}
-            <View style={[
-              s.logoBg,
-              { width: IMG.LOGO_CONTAINER, height: IMG.LOGO_CONTAINER, borderRadius: IMG.LOGO_CONTAINER / 2 }
-            ]}>
+            <View style={[s.logoBg, {
+              width:        IMG.LOGO_CONTAINER,
+              height:       IMG.LOGO_CONTAINER,
+              borderRadius: IMG.LOGO_CONTAINER / 2,
+            }]}>
               <Image
                 source={ICONS.logo}
                 style={{ width: IMG.LOGO_SIZE, height: IMG.LOGO_SIZE }}
@@ -107,13 +156,19 @@ export default function OTPScreen({ navigation, route }) {
               />
             </View>
             <Text style={s.title}>Verify OTP</Text>
-            <View style={s.phonePill}><Text style={s.phoneTxt}>📱 +91 {phone}</Text></View>
-            <Text style={s.subtitle}>Enter the 6-digit code sent to your number</Text>
+            <View style={s.phonePill}>
+              <Text style={s.phoneTxt}>📱 +91 {phone}</Text>
+            </View>
+            <Text style={s.subtitle}>
+              Enter the 6-digit code sent to your number
+            </Text>
           </View>
 
+          {/* Card */}
           <View style={s.card}>
             <View style={s.handle} />
 
+            {/* Dev OTP display */}
             {devOTP ? (
               <View style={s.devBox}>
                 <Text style={s.devTitle}>🔑 Your OTP Code</Text>
@@ -124,21 +179,25 @@ export default function OTPScreen({ navigation, route }) {
 
             <Text style={s.fieldLabel}>Enter 6-digit OTP</Text>
 
-            {/* OTP: visual boxes + full-size transparent real input */}
+            {/* Visual OTP boxes + hidden real input */}
             <View style={[s.otpContainer, { height: BOX_H }]}>
               <View style={s.boxRow} pointerEvents="none">
                 {[0,1,2,3,4,5].map(i => (
                   <View key={i} style={[
                     s.box, { width: BOX_W, height: BOX_H },
                     otp.length === i && !loading && s.boxActive,
-                    otp.length > i  && s.boxFilled,
-                    !!error         && s.boxError,
+                    otp.length >  i && s.boxFilled,
+                    !!error          && s.boxError,
                   ]}>
                     <Text style={s.boxTxt}>{otp[i] ?? ''}</Text>
                   </View>
                 ))}
               </View>
-              <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={focusInput} activeOpacity={1}>
+              <TouchableOpacity
+                style={StyleSheet.absoluteFillObject}
+                onPress={focusInput}
+                activeOpacity={1}
+              >
                 <TextInput
                   ref={inputRef}
                   value={otp}
@@ -156,18 +215,30 @@ export default function OTPScreen({ navigation, route }) {
 
             {error
               ? <View style={s.errorBox}><Text style={s.errorTxt}>⚠️  {error}</Text></View>
-              : <Text style={s.hint}>Auto-verifies when all 6 digits are entered</Text>
+              : <Text style={s.hint}>Auto-verifies when all 6 digits entered</Text>
             }
 
-            <TouchableOpacity style={[s.btn, (otp.length < 6 || loading) && s.btnOff]} onPress={() => doVerify()} disabled={otp.length < 6 || loading} activeOpacity={0.88}>
-              {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.btnTxt}>✓  Verify & Continue</Text>}
+            <TouchableOpacity
+              style={[s.btn, (otp.length < 6 || loading) && s.btnOff]}
+              onPress={() => doVerify()}
+              disabled={otp.length < 6 || loading}
+              activeOpacity={0.88}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={s.btnTxt}>✓  Verify & Continue</Text>
+              }
             </TouchableOpacity>
 
             <View style={s.resendRow}>
               <Text style={s.resendTxt}>Didn't receive it?  </Text>
               {timer > 0
                 ? <Text style={s.timerTxt}>⏱ Resend in {timer}s</Text>
-                : <TouchableOpacity onPress={() => navigation.goBack()}><Text style={s.resendLink}>← Resend OTP</Text></TouchableOpacity>
+                : (
+                  <TouchableOpacity onPress={() => navigation.goBack()}>
+                    <Text style={s.resendLink}>← Resend OTP</Text>
+                  </TouchableOpacity>
+                )
               }
             </View>
           </View>

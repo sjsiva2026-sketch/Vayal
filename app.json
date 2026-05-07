@@ -2,7 +2,7 @@
   "expo": {
     "name": "Namma Vayal",
     "slug": "namma-vayal",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#1C7C54",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.vayal.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#1C7C54"
@@ -51,11 +51,11 @@
         }
       ]
     ],
+    "owner": "gunasekar22it241",
     "extra": {
       "eas": {
-        "projectId": "32ddd1ac-6b7e-4195-a300-4a89c49efe57"
+        "projectId": "6b073f71-f2fe-4f59-ab5c-44984f7643e8"
       }
-    },
-    "owner": "gunasekar22it241"
+    }
   }
 }

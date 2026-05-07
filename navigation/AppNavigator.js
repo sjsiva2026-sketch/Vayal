@@ -1,9 +1,9 @@
-// navigation/AppNavigator.js — KYC guard added
+// navigation/AppNavigator.js
 // GUARD ORDER:
-//   1. No user → RoleSelect
-//   2. Owner + accessGranted=false → KycScreen (blocked)
-//   3. Owner + isLocked=true → LockWall (commission)
-//   4. Otherwise → normal home screens
+//   1. No user            → RoleSelect
+//   2. Owner kycPassed=false → KycScreen  (STRICT: isVerified + kycStatus + accessGranted)
+//   3. Owner isLocked=true   → LockWall   (commission)
+//   4. Otherwise             → normal home
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -17,7 +17,7 @@ import { FIcon }          from '../utils/icons';
 import { useAuth }        from '../context/AuthContext';
 import { useUser }        from '../context/UserContext';
 import { checkTimeLock, listenOwnerLockState, computeLockState } from '../firebase/commission';
-import { listenKycStatus }  from '../firebase/kyc';
+import { listenKycStatus }   from '../firebase/kyc';
 import { COLORS }    from '../constants/colors';
 import { ROLES }     from '../constants/roles';
 import { ICONS }     from '../assets/index';
@@ -60,6 +60,14 @@ const HEADER = {
   headerTitleStyle:  { fontWeight: '800', fontSize: 18, color: '#111827' },
   headerBackTitleVisible: false,
 };
+
+// ── Check if owner has passed KYC ─────────────────────────────────────────
+// All 3 fields must be true — owner cannot bypass
+function ownerKycPassed(profile) {
+  return profile?.isVerified    === true
+      && profile?.kycStatus     === 'verified'
+      && profile?.accessGranted === true;
+}
 
 function Splash() {
   return (
@@ -122,24 +130,32 @@ export default function AppNavigator() {
   const lockTimerRef = useRef(null);
   const [ready, setReady] = useState(false);
 
-  useEffect(() => { const t = setTimeout(() => setReady(true), 5000); return () => clearTimeout(t); }, []);
-  useEffect(() => { if (authProfile && !ctxProfile) setUserProfile(authProfile); }, [authProfile, ctxProfile]);
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 5000);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (authProfile && !ctxProfile) setUserProfile(authProfile);
+  }, [authProfile, ctxProfile]);
 
   const profile = ctxProfile || authProfile;
   const uid     = profile?.id;
   const role    = profile?.role;
 
   // ── KYC real-time listener ──────────────────────────────────────────────
+  // Fires when admin approves → auto-navigate to OwnerHome
+  // Fires when admin revokes  → send back to KycScreen
   useEffect(() => {
     if (!uid || role !== ROLES.OWNER) return;
     const unsub = listenKycStatus(uid, ({ kycStatus, accessGranted, isVerified }) => {
       updateProfile({ kycStatus, accessGranted, isVerified });
       if (!navRef.isReady()) return;
-      if (accessGranted === true && profile?.accessGranted !== true) {
-        // Just approved → go to OwnerHome
+      const passed = isVerified === true && kycStatus === 'verified' && accessGranted === true;
+      const wasPassed = ownerKycPassed(profile);
+      if (passed && !wasPassed) {
         navRef.reset({ index: 0, routes: [{ name: 'OwnerHome' }] });
-      } else if (accessGranted === false && profile?.accessGranted === true) {
-        // Revoked → back to KYC
+      } else if (!passed && wasPassed) {
         navRef.reset({ index: 0, routes: [{ name: 'KycScreen' }] });
       }
     });
@@ -149,22 +165,31 @@ export default function AppNavigator() {
   // ── Commission lock listener ─────────────────────────────────────────────
   useEffect(() => {
     if (!uid || role !== ROLES.OWNER) return;
-    if (profile?.accessGranted === false) return; // KYC not approved yet
+    if (!ownerKycPassed(profile)) return; // KYC not done yet
     const unsub = listenOwnerLockState(uid, (state) => {
       const wasLocked = profile?.isLocked === true;
-      updateProfile({ isLocked: state.isLocked, paymentStatus: state.paymentStatus, otpVerifiedAt: state.otpVerifiedAt, paymentDeadline: state.paymentDeadline, commissionAmount: state.commissionAmount });
+      updateProfile({
+        isLocked:         state.isLocked,
+        paymentStatus:    state.paymentStatus,
+        otpVerifiedAt:    state.otpVerifiedAt,
+        paymentDeadline:  state.paymentDeadline,
+        commissionAmount: state.commissionAmount,
+      });
       if (!navRef.isReady()) return;
-      if (state.isLocked && !wasLocked) navRef.reset({ index: 0, routes: [{ name: 'LockWall' }] });
-      else if (!state.isLocked && wasLocked && state.paymentStatus === 'paid') navRef.reset({ index: 0, routes: [{ name: 'OwnerHome' }] });
+      if (state.isLocked && !wasLocked) {
+        navRef.reset({ index: 0, routes: [{ name: 'LockWall' }] });
+      } else if (!state.isLocked && wasLocked && state.paymentStatus === 'paid') {
+        navRef.reset({ index: 0, routes: [{ name: 'OwnerHome' }] });
+      }
     });
     return unsub;
-  }, [uid, role, profile?.accessGranted]);
+  }, [uid, role, profile?.accessGranted, profile?.isVerified]);
 
   // ── Precision lock timer ─────────────────────────────────────────────────
   useEffect(() => {
     clearTimeout(lockTimerRef.current);
-    if (!uid || role !== ROLES.OWNER) return;
-    if (!profile?.accessGranted) return;
+    if (!uid || role !== ROLES.OWNER)  return;
+    if (!ownerKycPassed(profile))      return;
     if (profile?.paymentStatus === 'paid' || profile?.isLocked) return;
     const { msRemaining } = computeLockState(profile);
     if (!msRemaining || msRemaining <= 0) return;
@@ -182,17 +207,21 @@ export default function AppNavigator() {
 
   // ── Initial route ─────────────────────────────────────────────────────────
   let initialRoute = 'RoleSelect';
+
   if (user?.uid && role) {
     if (role === ROLES.FARMER) {
       initialRoute = 'FarmerHome';
+
     } else if (role === ROLES.OWNER) {
-      // KYC check first
-      if (profile?.accessGranted !== true) {
+      // Strict 3-field KYC check — all must be true
+      if (!ownerKycPassed(profile)) {
         initialRoute = 'KycScreen';
       } else {
-        const isLocked = profile?.isLocked === true || computeLockState(profile).shouldLock;
+        const isLocked = profile?.isLocked === true
+                      || computeLockState(profile).shouldLock;
         initialRoute = isLocked ? 'LockWall' : 'OwnerHome';
       }
+
     } else if (role === ROLES.ADMIN) {
       initialRoute = 'AdminDashboard';
     }
@@ -201,6 +230,8 @@ export default function AppNavigator() {
   return (
     <NavigationContainer ref={navRef}>
       <Stack.Navigator initialRouteName={initialRoute} screenOptions={HEADER}>
+
+        {/* Auth */}
         <Stack.Screen name="RoleSelect"   component={RoleSelect}   options={{ headerShown: false }} />
         <Stack.Screen name="Login"        component={LoginScreen}  options={{ headerShown: false }} />
         <Stack.Screen name="OTP"          component={OTPScreen}    options={{ headerShown: false }} />
@@ -215,13 +246,19 @@ export default function AppNavigator() {
         <Stack.Screen name="BookingConfirm" component={BookingConfirm}     options={{ title: 'Booking Confirmed' }} />
         <Stack.Screen name="RatingScreen"   component={RatingScreen}       options={{ title: 'Rate Experience' }} />
 
-        {/* Owner — KycScreen always registered */}
-        <Stack.Screen name="KycScreen"     component={KycScreen}      options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="LockWall"      component={LockWallScreen} options={{ headerShown: false, gestureEnabled: false }} />
+        {/* Owner — KycScreen + LockWall always registered, gestureEnabled:false = no back swipe */}
+        <Stack.Screen name="KycScreen"     component={KycScreen}         options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="LockWall"      component={LockWallScreen}    options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen
           name="PayCommission"
           component={PayCommission}
-          options={{ title: 'Pay Commission', headerStyle: { backgroundColor: '#B91C1C', elevation: 0 }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800', fontSize: 18, color: '#fff' }, gestureEnabled: false }}
+          options={{
+            title: 'Pay Commission',
+            headerStyle: { backgroundColor: '#B91C1C', elevation: 0 },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontWeight: '800', fontSize: 18, color: '#fff' },
+            gestureEnabled: false,
+          }}
         />
         <Stack.Screen name="OwnerHome"      component={OwnerTabNavigator} options={{ headerShown: false }} />
         <Stack.Screen name="OwnerDashboard" component={OwnerDashboard}    options={{ headerShown: false }} />
@@ -232,15 +269,16 @@ export default function AppNavigator() {
         <Stack.Screen name="OwnerProfile"   component={OwnerProfile}      options={{ title: 'My Profile' }} />
         <Stack.Screen name="EditMachine"    component={EditMachine}       options={{ title: 'Edit Machine' }} />
 
-        {/* Admin — Login uses email/password, not OTP */}
-        <Stack.Screen name="AdminLogin"        component={AdminLoginScreen}    options={{ headerShown: false }} />
-        <Stack.Screen name="AdminDashboard"    component={AdminDashboard}      options={{ headerShown: false }} />
-        <Stack.Screen name="UsersList"         component={UsersList}           options={{ title: 'Users' }} />
-        <Stack.Screen name="MachinesList"      component={MachinesList}        options={{ title: 'Machines' }} />
-        <Stack.Screen name="PaymentsList"      component={PaymentsList}        options={{ title: 'Commission Payments' }} />
+        {/* Admin */}
+        <Stack.Screen name="AdminLogin"          component={AdminLoginScreen}    options={{ headerShown: false }} />
+        <Stack.Screen name="AdminDashboard"      component={AdminDashboard}      options={{ headerShown: false }} />
+        <Stack.Screen name="UsersList"           component={UsersList}           options={{ title: 'Users' }} />
+        <Stack.Screen name="MachinesList"        component={MachinesList}        options={{ title: 'Machines' }} />
+        <Stack.Screen name="PaymentsList"        component={PaymentsList}        options={{ title: 'Commission Payments' }} />
         <Stack.Screen name="KycVerificationList" component={KycVerificationList} options={{ title: 'KYC Verification' }} />
-        <Stack.Screen name="Reports"           component={Reports}             options={{ title: 'Reports' }} />
-        <Stack.Screen name="AdminAppAccount"   component={AdminAppAccount}     options={{ title: 'App Account' }} />
+        <Stack.Screen name="Reports"             component={Reports}             options={{ title: 'Reports' }} />
+        <Stack.Screen name="AdminAppAccount"     component={AdminAppAccount}     options={{ title: 'App Account' }} />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

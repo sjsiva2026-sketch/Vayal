@@ -1,4 +1,11 @@
 // src/common/screens/ProfileSetup.js
+// FIXED: Owner → KycScreen after profile save (never OwnerHome)
+//
+// ROUTES after save:
+//   farmer → FarmerHome
+//   owner  → KycScreen  ← must complete KYC before OwnerHome
+//   admin  → AdminDashboard
+
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
@@ -14,13 +21,19 @@ import { FIcon }           from '../../../utils/icons';
 import { COLORS }          from '../../../constants/colors';
 import { rs, rf, H_PAD }   from '../../../utils/responsive';
 
-const ROLE_HOME = { farmer: 'FarmerHome', owner: 'OwnerHome', admin: 'AdminDashboard' };
+// Destination after profile save
+const AFTER_SAVE = {
+  farmer: 'FarmerHome',
+  owner:  'KycScreen',    // owner MUST pass KYC before home
+  admin:  'AdminDashboard',
+};
 
 export default function ProfileSetup({ navigation, route }) {
   const uid      = route?.params?.uid   || '';
   const phone    = route?.params?.phone || '';
   const role     = route?.params?.role  || 'farmer';
   const isFarmer = role === 'farmer';
+  const isOwner  = role === 'owner';
 
   const { setUserProfile: setAuthProfile } = useAuth();
   const { setUserProfile }                 = useUser();
@@ -31,11 +44,6 @@ export default function ProfileSetup({ navigation, route }) {
   const [village,  setVillage]  = useState('');
   const [loading,  setLoading]  = useState(false);
 
-  const goHome = () =>
-    navigation.dispatch(CommonActions.reset({
-      index: 0, routes: [{ name: ROLE_HOME[role] || 'RoleSelect' }],
-    }));
-
   if (!uid) {
     return (
       <SafeAreaView style={[s.safe, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -45,7 +53,9 @@ export default function ProfileSetup({ navigation, route }) {
         </Text>
         <TouchableOpacity
           style={[s.saveBtn, { marginTop: rs(24), marginHorizontal: rs(40) }]}
-          onPress={() => navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'RoleSelect' }] }))}
+          onPress={() => navigation.dispatch(CommonActions.reset({
+            index: 0, routes: [{ name: 'RoleSelect' }],
+          }))}
         >
           <Text style={s.saveBtnTxt}>Start Over</Text>
         </TouchableOpacity>
@@ -57,26 +67,38 @@ export default function ProfileSetup({ navigation, route }) {
     if (!name.trim()) { Alert.alert('Required', 'Enter your full name'); return; }
     if (!district)    { Alert.alert('Required', 'Select your district'); return; }
     if (!taluk)       { Alert.alert('Required', 'Select your taluk');    return; }
+
     setLoading(true);
     try {
       const profile = {
         role,
-        phone:        phone.replace(/^\+91/, ''),
-        name:         name.trim(),
-        state:        'Tamil Nadu',
+        phone:         phone.replace(/^\+91/, ''),
+        name:          name.trim(),
+        state:         'Tamil Nadu',
         district,
         taluk,
-        village:      village.trim(),
-        verified:     false,
-        isLocked:     false,
-        accessGranted: role === 'farmer' ? true : false, // farmers auto-access, owners need KYC
-        kycStatus:    role === 'farmer' ? 'verified' : 'not_submitted',
+        village:       village.trim(),
+        isLocked:      false,
+        // ── KYC defaults ─────────────────────────────────────────────────
+        // Farmer  → instantly verified, full access
+        // Owner   → must go through admin KYC, starts as not_submitted
+        kycStatus:     isFarmer ? 'verified'       : 'not_submitted',
+        isVerified:    isFarmer ? true              : false,
+        accessGranted: isFarmer ? true              : false,
       };
+
       await createUser(uid, profile);
+
       const full = { ...profile, id: uid };
       setAuthProfile(full);
       setUserProfile(full);
-      goHome();
+
+      // Navigate — owner goes to KycScreen, never OwnerHome directly
+      const dest = AFTER_SAVE[role] || 'RoleSelect';
+      navigation.dispatch(CommonActions.reset({
+        index: 0,
+        routes: [{ name: dest }],
+      }));
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not save. Try again.');
       setLoading(false);
@@ -94,15 +116,20 @@ export default function ProfileSetup({ navigation, route }) {
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      {/* KAV: shrinks content when keyboard opens */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         {/* Fixed header */}
         <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={s.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
             <FIcon name="arrow-left" size={rs(20)} color="#111827" fallback="←" />
           </TouchableOpacity>
+
           <View style={s.titleRow}>
             <View style={[s.iconCircle, { backgroundColor: isFarmer ? '#E8F5EE' : '#FFF8E1' }]}>
               <Text style={{ fontSize: rf(28) }}>{isFarmer ? '👨‍🌾' : '🚜'}</Text>
@@ -120,20 +147,22 @@ export default function ProfileSetup({ navigation, route }) {
             {steps.map((st, i) => (
               <View key={st.key} style={s.stepItem}>
                 <View style={[s.stepDot, st.done && s.stepDotDone]}>
-                  <Text style={[s.stepNum, st.done && { color: '#fff' }]}>{st.done ? '✓' : i + 1}</Text>
+                  <Text style={[s.stepNum, st.done && { color: '#fff' }]}>
+                    {st.done ? '✓' : i + 1}
+                  </Text>
                 </View>
-                <Text style={[s.stepLabel, st.done && s.stepLabelDone]}>{st.label}</Text>
+                <Text style={[s.stepLabel, st.done && s.stepLabelDone]}>
+                  {st.label}
+                </Text>
               </View>
             ))}
           </View>
 
-          {/* Progress bar */}
           <View style={s.progressTrack}>
             <View style={[s.progressFill, { width: `${progress * 100}%` }]} />
           </View>
         </View>
 
-        {/* Scrollable form — flexGrow:1 ensures it fills available space */}
         <ScrollView
           style={s.formScroll}
           contentContainerStyle={s.formContent}
@@ -143,9 +172,22 @@ export default function ProfileSetup({ navigation, route }) {
         >
           <View style={s.handle} />
 
+          {/* KYC notice for owners */}
+          {isOwner && (
+            <View style={s.kycBanner}>
+              <Text style={s.kycBannerTitle}>🪪 KYC Required Next</Text>
+              <Text style={s.kycBannerSub}>
+                After saving, you'll upload documents for admin verification.
+                You can't access the owner dashboard until verified.
+              </Text>
+            </View>
+          )}
+
           {/* Name */}
           <View style={s.fieldGroup}>
-            <Text style={s.fieldLabel}>👤 Full Name <Text style={s.req}>*</Text></Text>
+            <Text style={s.fieldLabel}>
+              👤 Full Name <Text style={s.req}>*</Text>
+            </Text>
             <View style={[s.inputWrap, name.length > 0 && s.inputWrapDone]}>
               <TextInput
                 style={s.input}
@@ -159,7 +201,6 @@ export default function ProfileSetup({ navigation, route }) {
             </View>
           </View>
 
-          {/* District + Taluk picker */}
           <DistrictTalukPicker
             district={district}
             taluk={taluk}
@@ -167,9 +208,10 @@ export default function ProfileSetup({ navigation, route }) {
             onTalukChange={setTaluk}
           />
 
-          {/* Village */}
           <View style={s.fieldGroup}>
-            <Text style={s.fieldLabel}>📍 Village <Text style={s.opt}>(optional)</Text></Text>
+            <Text style={s.fieldLabel}>
+              📍 Village <Text style={s.opt}>(optional)</Text>
+            </Text>
             <View style={s.inputWrap}>
               <TextInput
                 style={s.input}
@@ -194,7 +236,9 @@ export default function ProfileSetup({ navigation, route }) {
           >
             {loading
               ? <ActivityIndicator color="#fff" />
-              : <Text style={s.saveBtnTxt}>Save & Continue →</Text>
+              : <Text style={s.saveBtnTxt}>
+                  {isOwner ? 'Save & Start KYC →' : 'Save & Continue →'}
+                </Text>
             }
           </TouchableOpacity>
         </ScrollView>
@@ -205,7 +249,6 @@ export default function ProfileSetup({ navigation, route }) {
 
 const s = StyleSheet.create({
   safe:          { flex: 1, backgroundColor: '#fff' },
-
   header:        { backgroundColor: '#fff', paddingHorizontal: H_PAD, paddingTop: rs(12), paddingBottom: rs(12), borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   backBtn:       { width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center', marginBottom: rs(12) },
   titleRow:      { flexDirection: 'row', alignItems: 'center', marginBottom: rs(14) },
@@ -222,11 +265,12 @@ const s = StyleSheet.create({
   stepLabelDone: { color: COLORS.primary, fontWeight: '700' },
   progressTrack: { height: rs(4), backgroundColor: '#F0F0F0', borderRadius: rs(2), overflow: 'hidden' },
   progressFill:  { height: '100%', backgroundColor: COLORS.primary, borderRadius: rs(2) },
-
   formScroll:    { flex: 1, backgroundColor: '#F9FAFB' },
   formContent:   { flexGrow: 1, paddingHorizontal: H_PAD, paddingTop: rs(12), paddingBottom: rs(80) },
-
   handle:        { width: rs(40), height: rs(4), borderRadius: rs(2), backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: rs(20) },
+  kycBanner:     { backgroundColor: '#FFF8E1', borderRadius: rs(12), padding: rs(14), marginBottom: rs(16), borderLeftWidth: rs(4), borderLeftColor: '#F59E0B' },
+  kycBannerTitle:{ fontSize: rf(13), fontWeight: '800', color: '#92400E', marginBottom: rs(4) },
+  kycBannerSub:  { fontSize: rf(12), color: '#92400E', lineHeight: rf(18) },
   fieldGroup:    { marginBottom: rs(14) },
   fieldLabel:    { fontSize: rf(13), fontWeight: '700', color: '#374151', marginBottom: rs(7) },
   req:           { color: '#EF4444', fontWeight: '900' },
