@@ -1,12 +1,14 @@
 // src/owner/screens/AddMachine.js
+// UPDATED: Duplicate machine type check — one owner cannot add same type twice
+
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
   Alert, ScrollView, StatusBar, ActivityIndicator,
-  Image, KeyboardAvoidingView, Platform,
+  Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import { LinearGradient }   from 'expo-linear-gradient';
-import { addMachine }       from '../../../firebase/firestore';
+import { addMachine, getMachinesByOwner } from '../../../firebase/firestore';
 import { useUser }          from '../../../context/UserContext';
 import { CATEGORIES }       from '../../../constants/categories';
 import { CATEGORY_IMAGES }  from '../../../assets/index';
@@ -16,8 +18,6 @@ import { IMG }              from '../../../utils/imageSize';
 import Input                from '../../common/components/Input';
 import DistrictTalukPicker  from '../../common/components/DistrictTalukPicker';
 
-// 2-column box width
-import { Dimensions } from 'react-native';
 const W      = Dimensions.get('window').width;
 const CARD_W = (W - rs(32) - rs(12)) / 2;
 
@@ -39,17 +39,37 @@ export default function AddMachine({ navigation }) {
   const [loading,  setLoad]   = useState(false);
 
   const handleAdd = async () => {
-    if (!type)  { Alert.alert('Required', 'Please select a machine type'); return; }
-    if (!price) { Alert.alert('Required', 'Please enter price per hour');  return; }
-    if (!district) { Alert.alert('Required', 'Please select your district'); return; }
-    if (!taluk)    { Alert.alert('Required', 'Please select your taluk');   return; }
+    if (!type)     { Alert.alert('Required', 'Please select a machine type'); return; }
+    if (!price)    { Alert.alert('Required', 'Please enter price per hour');  return; }
+    if (!district) { Alert.alert('Required', 'Please select your district');  return; }
+    if (!taluk)    { Alert.alert('Required', 'Please select your taluk');     return; }
     const p = parseFloat(price);
     if (isNaN(p) || p <= 0) { Alert.alert('Invalid', 'Enter a valid price'); return; }
+
     setLoad(true);
     try {
+      // ── Duplicate check — same type cannot be added twice ──────────────
+      const existing = await getMachinesByOwner(uid);
+      const alreadyExists = existing.docs.some(d => d.data().type === type);
+      if (alreadyExists) {
+        const label = CATEGORIES.find(c => c.id === type)?.label || type;
+        Alert.alert(
+          'Machine already added',
+          `You already have a ${label}. Each machine type can only be added once.\n\nYou can edit or delete the existing one.`,
+        );
+        setLoad(false);
+        return;
+      }
+
       await addMachine({
-        ownerId: uid, ownerName: userProfile?.name || '', ownerPhone: userProfile?.phone || '',
-        type, price_per_hour: p, district, taluk, isActive: true,
+        ownerId:    uid,
+        ownerName:  userProfile?.name  || '',
+        ownerPhone: userProfile?.phone || '',
+        type,
+        price_per_hour: p,
+        district,
+        taluk,
+        isActive: true,
       });
       Alert.alert('✅ Machine Added!', 'Your machine is now live for farmers to book.');
       navigation.goBack();
@@ -62,21 +82,16 @@ export default function AddMachine({ navigation }) {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-          {/* Owner contact card */}
           <View style={s.ownerCard}>
             <Text style={s.ownerLabel}>Your Contact (Shown to Farmers)</Text>
             <Text style={s.ownerPhone}>📞 +91 {userProfile?.phone || '—'}</Text>
           </View>
 
-          {/* Machine Type grid */}
           <View style={s.fieldGroup}>
             <Text style={s.fieldLabel}>🚜 Machine Type <Text style={s.req}>*</Text></Text>
+            <Text style={s.fieldHint}>Each type can only be added once per owner</Text>
             <View style={s.typeGrid}>
               {CATEGORIES.map((c, i) => {
                 const ac  = ACCENT[c.id] || DA;
@@ -118,21 +133,13 @@ export default function AddMachine({ navigation }) {
             }
           </View>
 
-          {/* Price */}
           <View style={s.fieldGroup}>
             <Input label="💰 Price per Hour (₹) *" value={price} onChangeText={setPrice} keyboardType="numeric" placeholder="e.g. 1500" />
           </View>
 
-          {/* Location */}
           <DistrictTalukPicker district={district} taluk={taluk} onDistrictChange={setDist} onTalukChange={setTaluk} />
 
-          {/* Submit */}
-          <TouchableOpacity
-            style={[s.btn, loading && { opacity: 0.7 }]}
-            onPress={handleAdd}
-            disabled={loading}
-            activeOpacity={0.88}
-          >
+          <TouchableOpacity style={[s.btn, loading && { opacity: 0.7 }]} onPress={handleAdd} disabled={loading} activeOpacity={0.88}>
             <LinearGradient
               colors={loading ? ['#D1D5DB','#D1D5DB'] : ['#1C7C54','#2E9E6B']}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -158,11 +165,12 @@ const s = StyleSheet.create({
   ownerLabel:       { fontSize: rf(12), color: COLORS.textSecondary, marginBottom: rs(6) },
   ownerPhone:       { fontSize: rf(16), fontWeight: '700', color: COLORS.primary },
   fieldGroup:       { marginBottom: rs(20) },
-  fieldLabel:       { fontSize: rf(14), fontWeight: '700', color: '#374151', marginBottom: rs(12) },
-  req:              { color: COLORS.error },
+  fieldLabel:       { fontSize: rf(14), fontWeight: '700', color: '#374151', marginBottom: rs(4) },
+  fieldHint:        { fontSize: rf(12), color: '#9CA3AF', marginBottom: rs(12) },
+  req:              { color: '#EF4444' },
   typeGrid:         { flexDirection: 'row', flexWrap: 'wrap' },
   typeCard:         { borderRadius: rs(18), backgroundColor: '#fff', borderWidth: rs(2.5), marginBottom: rs(12), overflow: 'hidden', elevation: 3 },
-  imgWrap:          { width: '100%', height: rs(110), alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  imgWrap:          { width: '100%', height: rs(110), alignItems: 'center', justifyContent: 'center' },
   cardBottom:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rs(12), paddingVertical: rs(10), backgroundColor: '#fff' },
   cardLabel:        { fontSize: rf(13), fontWeight: '800', color: '#111827', flex: 1 },
   checkBadge:       { width: rs(22), height: rs(22), borderRadius: rs(11), alignItems: 'center', justifyContent: 'center' },

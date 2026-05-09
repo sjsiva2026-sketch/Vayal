@@ -48,7 +48,7 @@ export default function RoleSelect({ navigation }) {
             </View>
           </TouchableOpacity>
           <Text style={s.appName}>Namma Vayal</Text>
-          <Text style={s.appTamil}>நம்ம வாயல்</Text>
+          <Text style={s.appTamil}>நம்ம வயல்</Text>
           <View style={s.tagPill}>
             <Text style={s.tagPillTxt}>Tamil Nadu's Farm Machinery App</Text>
           </View>

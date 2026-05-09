@@ -1,5 +1,6 @@
 // src/owner/screens/KycScreen.js
-// FIXED: Navigate immediately when admin approves — no navigatedRef blocking
+// Vehicle image: MANDATORY
+// Auto-navigate when admin approves via onSnapshot
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -87,27 +88,22 @@ export default function KycScreen({ navigation }) {
   const [profileAsset, setProfileAsset] = useState(null);
   const [licenseAsset, setLicenseAsset] = useState(null);
   const [aadharAsset,  setAadharAsset]  = useState(null);
-  const [vehicleAsset, setVehicleAsset] = useState(null);
+  const [vehicleAsset, setVehicleAsset] = useState(null); // MANDATORY
   const [uploading,    setUploading]    = useState(false);
 
-  // ── REALTIME LISTENER — navigate immediately when admin approves ──────────
+  // Realtime listener — navigate immediately when admin approves
   useEffect(() => {
     if (!uid) return;
-
     const unsub = listenKycStatus(uid, ({ kycStatus: ks, accessGranted, isVerified, kycRejectReason }) => {
       setKycStatus(ks);
       updateProfile({ kycStatus: ks, accessGranted, isVerified });
       if (kycRejectReason) setRejectReason(kycRejectReason);
-
-      // Navigate immediately — no ref guard blocking it
       if (isVerified === true && ks === 'verified' && accessGranted === true) {
         navigation.dispatch(CommonActions.reset({
-          index:  0,
-          routes: [{ name: 'OwnerHome' }],
+          index: 0, routes: [{ name: 'OwnerHome' }],
         }));
       }
     });
-
     return unsub;
   }, [uid]);
 
@@ -124,6 +120,7 @@ export default function KycScreen({ navigation }) {
     if (!profileAsset)      { Alert.alert('Required', 'Upload your profile photo'); return; }
     if (!licenseAsset)      { Alert.alert('Required', 'Upload driving license');    return; }
     if (!aadharAsset)       { Alert.alert('Required', 'Upload Aadhar card');        return; }
+    if (!vehicleAsset)      { Alert.alert('Vehicle image is required', 'Please upload a photo of your vehicle or machine.'); return; }
 
     setUploading(true);
     try {
@@ -134,7 +131,7 @@ export default function KycScreen({ navigation }) {
         profileUri:      profileAsset.uri,
         licenseUri:      licenseAsset.uri,
         aadharUri:       aadharAsset.uri,
-        vehicleImageUri: vehicleAsset?.uri ?? null,
+        vehicleImageUri: vehicleAsset.uri,  // MANDATORY
       });
       updateProfile({
         kycStatus:     'pending',
@@ -146,28 +143,20 @@ export default function KycScreen({ navigation }) {
       setKycStatus('pending');
     } catch (e) {
       Alert.alert('Upload Failed', e.message || 'Check your connection and try again.');
-    } finally {
-      setUploading(false);
-    }
+    } finally { setUploading(false); }
   };
 
-  // ── STATE: PENDING ─────────────────────────────────────────────────────────
+  // ── PENDING ────────────────────────────────────────────────────────────
   if (kycStatus === 'pending') {
     return (
       <SafeAreaView style={s.safe}>
         <View style={s.center}>
-          <View style={[s.stateCircle, { backgroundColor: '#FFF3CD' }]}>
-            <Text style={s.stateEmoji}>⏳</Text>
-          </View>
+          <View style={[s.stateCircle, { backgroundColor: '#FFF3CD' }]}><Text style={s.stateEmoji}>⏳</Text></View>
           <Text style={s.stateTitle}>Waiting for Admin Approval</Text>
-          <Text style={s.stateSub}>
-            Your documents have been submitted.{'\n'}
-            Admin will verify and unlock your account.{'\n\n'}
-            This page updates automatically.
-          </Text>
+          <Text style={s.stateSub}>Your documents have been submitted.{'\n'}Admin will verify and unlock your account.{'\n\n'}This page updates automatically.</Text>
           <View style={s.docsCard}>
             <Text style={s.docsTitle}>Documents submitted:</Text>
-            {['Profile photo', 'Driving license', 'Aadhar card', 'Vehicle number'].map(d => (
+            {['Profile photo', 'Driving license', 'Aadhar card', 'Vehicle number', 'Vehicle image'].map(d => (
               <View key={d} style={s.docRow}>
                 <Text style={s.docCheck}>✓</Text>
                 <Text style={s.docItem}>{d}</Text>
@@ -180,14 +169,12 @@ export default function KycScreen({ navigation }) {
     );
   }
 
-  // ── STATE: VERIFIED ────────────────────────────────────────────────────────
+  // ── VERIFIED ───────────────────────────────────────────────────────────
   if (kycStatus === 'verified') {
     return (
       <SafeAreaView style={s.safe}>
         <View style={s.center}>
-          <View style={[s.stateCircle, { backgroundColor: '#DCFCE7' }]}>
-            <Text style={s.stateEmoji}>✅</Text>
-          </View>
+          <View style={[s.stateCircle, { backgroundColor: '#DCFCE7' }]}><Text style={s.stateEmoji}>✅</Text></View>
           <Text style={s.stateTitle}>Verification Successful!</Text>
           <Text style={s.stateSub}>Opening your dashboard...</Text>
           <ActivityIndicator color={COLORS.primary} style={{ marginTop: rs(16) }} />
@@ -196,16 +183,13 @@ export default function KycScreen({ navigation }) {
     );
   }
 
-  // ── STATE: FORM (not_submitted or rejected) ────────────────────────────────
+  // ── FORM (not_submitted or rejected) ───────────────────────────────────
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
           <View style={s.header}>
             <View style={s.headerIcon}><Text style={{ fontSize: rf(30) }}>🪪</Text></View>
             <Text style={s.headerTitle}>Owner Verification</Text>
@@ -242,9 +226,14 @@ export default function KycScreen({ navigation }) {
             </View>
           </View>
 
+          {/* Vehicle Image — MANDATORY */}
           <View style={s.section}>
-            <Text style={s.label}>Vehicle Photo <Text style={s.opt}>(optional)</Text></Text>
-            <UploadSlot label="Vehicle / Machine Photo" icon="🚜" asset={vehicleAsset} onPick={() => pick(setVehicleAsset)} />
+            <Text style={s.label}>Vehicle / Machine Photo <Text style={s.req}>*</Text></Text>
+            <Text style={s.hint}>Upload a clear photo of your vehicle or machine</Text>
+            <UploadSlot label="Vehicle Photo" icon="🚜" asset={vehicleAsset} onPick={() => pick(setVehicleAsset)} required />
+            {!vehicleAsset && (
+              <Text style={s.vehicleWarn}>⚠ Vehicle image is required to submit</Text>
+            )}
           </View>
 
           <View style={s.infoBox}>
@@ -253,7 +242,12 @@ export default function KycScreen({ navigation }) {
           </View>
 
           <View style={{ paddingHorizontal: H_PAD, marginTop: rs(20), marginBottom: rs(40) }}>
-            <TouchableOpacity style={[s.submitBtn, uploading && s.submitBtnOff]} onPress={handleSubmit} disabled={uploading} activeOpacity={0.88}>
+            <TouchableOpacity
+              style={[s.submitBtn, uploading && s.submitBtnOff]}
+              onPress={handleSubmit}
+              disabled={uploading}
+              activeOpacity={0.88}
+            >
               {uploading ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <ActivityIndicator color="#fff" size="small" style={{ marginRight: rs(10) }} />
@@ -296,9 +290,10 @@ const s = StyleSheet.create({
   section:        { paddingHorizontal: H_PAD, marginTop: rs(20) },
   label:          { fontSize: rf(13), fontWeight: '700', color: '#374151', marginBottom: rs(8) },
   req:            { color: '#EF4444' },
-  opt:            { fontSize: rf(11), color: '#9CA3AF', fontWeight: '400' },
+  hint:           { fontSize: rf(12), color: '#9CA3AF', marginBottom: rs(10) },
   input:          { backgroundColor: '#fff', borderWidth: rs(1.5), borderColor: '#E5E7EB', borderRadius: rs(12), paddingVertical: rs(13), paddingHorizontal: rs(16), fontSize: rf(15), color: '#111827' },
   twoCol:         { flexDirection: 'row' },
+  vehicleWarn:    { fontSize: rf(12), color: '#EF4444', fontWeight: '600', marginTop: rs(8) },
   infoBox:        { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EFF6FF', borderRadius: rs(12), marginHorizontal: H_PAD, marginTop: rs(16), padding: rs(14) },
   infoTxt:        { fontSize: rf(12), color: '#1D4ED8', lineHeight: rf(19), flex: 1 },
   submitBtn:      { backgroundColor: COLORS.primary, borderRadius: rs(14), paddingVertical: rs(16), alignItems: 'center', justifyContent: 'center' },

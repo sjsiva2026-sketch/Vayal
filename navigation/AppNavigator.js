@@ -73,7 +73,7 @@ function Splash() {
           : <Text style={{ fontSize: rf(48) }}>🌾</Text>}
       </View>
       <Text style={{ fontSize: rf(30), fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: rs(4) }}>Namma Vayal</Text>
-      <Text style={{ fontSize: rf(14), color: 'rgba(255,255,255,0.65)', letterSpacing: 3, marginBottom: rs(40) }}>நம்ம வாயல்</Text>
+      <Text style={{ fontSize: rf(14), color: 'rgba(255,255,255,0.65)', letterSpacing: 3, marginBottom: rs(40) }}>நம்ம வயல்</Text>
       <ActivityIndicator size="large" color="rgba(255,255,255,0.85)" />
     </LinearGradient>
   );
