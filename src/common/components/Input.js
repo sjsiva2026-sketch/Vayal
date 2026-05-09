@@ -1,45 +1,33 @@
 // src/common/components/Input.js
 import React from 'react';
-import { View, TextInput, Text, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { rs, rf } from '../../../utils/responsive';
 import { COLORS } from '../../../constants/colors';
-import { rf, rs } from '../../../utils/responsive';
 
-export default function Input({
-  label, value, onChangeText, placeholder,
-  keyboardType = 'default', maxLength,
-  secureTextEntry = false, error, style,
-  editable = true, leftIcon, rightIcon,
-}) {
+export default function Input({ label, value, onChangeText, placeholder, keyboardType, editable = true, multiline, numberOfLines, style }) {
   return (
-    <View style={[s.wrap, style]}>
+    <View style={s.wrap}>
       {label ? <Text style={s.label}>{label}</Text> : null}
-      <View style={[s.row, !!error && s.rowErr, !editable && s.rowDisabled]}>
-        {leftIcon && <View style={s.side}>{leftIcon}</View>}
-        <TextInput
-          style={s.input}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={COLORS.textTertiary}
-          keyboardType={keyboardType}
-          maxLength={maxLength}
-          secureTextEntry={secureTextEntry}
-          editable={editable}
-        />
-        {rightIcon && <View style={s.side}>{rightIcon}</View>}
-      </View>
-      {error ? <Text style={s.error}>{error}</Text> : null}
+      <TextInput
+        style={[s.input, multiline && s.multi, !editable && s.disabled, style]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#C9D1DA"
+        keyboardType={keyboardType || 'default'}
+        editable={editable}
+        multiline={multiline}
+        numberOfLines={numberOfLines}
+        textAlignVertical={multiline ? 'top' : 'center'}
+      />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  wrap:        { marginBottom: rs(14) },
-  label:       { fontSize: rf(13), fontWeight: '700', color: COLORS.textSecondary, marginBottom: rs(8) },
-  row:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: rs(1.5), borderColor: COLORS.border, borderRadius: rs(12), paddingHorizontal: rs(14) },
-  rowErr:      { borderColor: COLORS.error },
-  rowDisabled: { backgroundColor: COLORS.borderLight, opacity: 0.7 },
-  input:       { flex: 1, paddingVertical: rs(13), fontSize: rf(15), color: COLORS.textPrimary },
-  side:        { paddingHorizontal: rs(6) },
-  error:       { fontSize: rf(12), color: COLORS.error, marginTop: rs(5) },
+  wrap:     { marginBottom: rs(14) },
+  label:    { fontSize: rf(13), fontWeight: '700', color: '#374151', marginBottom: rs(8) },
+  input:    { backgroundColor: '#fff', borderWidth: rs(1.5), borderColor: '#E5E7EB', borderRadius: rs(12), paddingVertical: rs(13), paddingHorizontal: rs(16), fontSize: rf(15), color: '#111827' },
+  multi:    { minHeight: rs(90), paddingTop: rs(12) },
+  disabled: { backgroundColor: '#F4F6F8', color: '#9CA3AF' },
 });

@@ -1,153 +1,124 @@
+// src/common/components/DistrictTalukPicker.js
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  Modal, FlatList, TextInput, SafeAreaView, StatusBar,
+  View, Text, TouchableOpacity, StyleSheet, Modal, FlatList,
+  TextInput, SafeAreaView, StatusBar,
 } from 'react-native';
 import { TN_DISTRICTS, getTaluks } from '../../../constants/tamilnadu';
-import { COLORS } from '../../../constants/colors';
+import { COLORS }   from '../../../constants/colors';
+import { rs, rf }   from '../../../utils/responsive';
+import { FIcon }    from '../../../utils/icons';
 
-function PickerModal({ visible, title, items, selected, onSelect, onClose }) {
+function PickerModal({ visible, title, items, onSelect, onClose }) {
   const [search, setSearch] = useState('');
-  const filtered = search.trim()
-    ? items.filter(i => i.toLowerCase().includes(search.toLowerCase()))
-    : items;
+  const filtered = items.filter(i => i.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={m.safe}>
-        <StatusBar barStyle="light-content" backgroundColor="#145A3E" />
+        <StatusBar barStyle="dark-content" />
         <View style={m.header}>
-          <TouchableOpacity onPress={onClose} style={m.closeBtn}>
+          <Text style={m.title}>{title}</Text>
+          <TouchableOpacity onPress={onClose} style={m.closeBtn} activeOpacity={0.7}>
             <Text style={m.closeTxt}>✕</Text>
           </TouchableOpacity>
-          <Text style={m.title} numberOfLines={1}>{title}</Text>
-          <View style={{ width: 36 }} />
         </View>
         <View style={m.searchWrap}>
-          <Text style={m.searchIcon}>🔍</Text>
+          <FIcon name="search" size={rs(16)} color="#9CA3AF" fallback="🔍" style={{ marginRight: rs(8) }} />
           <TextInput
             style={m.searchInput}
-            placeholder="Search…"
+            placeholder={`Search ${title.toLowerCase()}...`}
             placeholderTextColor="#9CA3AF"
             value={search}
             onChangeText={setSearch}
             autoFocus
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
-              <Text style={m.clearTxt}>✕</Text>
+            <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7}>
+              <Text style={{ color: '#9CA3AF', fontSize: rf(15), paddingLeft: rs(8) }}>✕</Text>
             </TouchableOpacity>
           )}
         </View>
-        <Text style={m.countTxt}>{filtered.length} result{filtered.length !== 1 ? 's' : ''}</Text>
         <FlatList
           data={filtered}
           keyExtractor={item => item}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={m.item} onPress={() => { onSelect(item); setSearch(''); onClose(); }} activeOpacity={0.7}>
+              <Text style={m.itemTxt}>{item}</Text>
+              <Text style={m.arrow}>›</Text>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={<Text style={m.empty}>No results found</Text>}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => {
-            const isSel = item === selected;
-            return (
-              <TouchableOpacity
-                style={[m.item, isSel && m.itemSelected]}
-                onPress={() => { onSelect(item); onClose(); setSearch(''); }}
-                activeOpacity={0.75}
-              >
-                <Text style={[m.itemTxt, isSel && m.itemTxtSelected]}>{item}</Text>
-                {isSel && <Text style={m.checkmark}>✓</Text>}
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={m.empty}>
-              <Text style={m.emptyEmoji}>🔍</Text>
-              <Text style={m.emptyTxt}>No results for "{search}"</Text>
-            </View>
-          }
         />
       </SafeAreaView>
     </Modal>
   );
 }
 
+const m = StyleSheet.create({
+  safe:        { flex: 1, backgroundColor: '#fff' },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rs(16), paddingVertical: rs(16), borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  title:       { fontSize: rf(17), fontWeight: '800', color: '#111827' },
+  closeBtn:    { width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center' },
+  closeTxt:    { fontSize: rf(16), color: '#374151', fontWeight: '700' },
+  searchWrap:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F5F7', borderRadius: rs(12), marginHorizontal: rs(16), marginVertical: rs(12), paddingHorizontal: rs(12), paddingVertical: rs(10) },
+  searchInput: { flex: 1, fontSize: rf(15), color: '#111827' },
+  item:        { flexDirection: 'row', alignItems: 'center', paddingVertical: rs(14), paddingHorizontal: rs(16), borderBottomWidth: 1, borderBottomColor: '#F4F5F7' },
+  itemTxt:     { flex: 1, fontSize: rf(15), color: '#111827' },
+  arrow:       { fontSize: rf(20), color: '#9CA3AF' },
+  empty:       { textAlign: 'center', padding: rs(32), color: '#9CA3AF', fontSize: rf(14) },
+});
+
 export default function DistrictTalukPicker({ district, taluk, onDistrictChange, onTalukChange }) {
   const [showDistrict, setShowDistrict] = useState(false);
   const [showTaluk,    setShowTaluk]    = useState(false);
-  const taluks = getTaluks(district);
-
-  const handleDistrictSelect = (d) => {
-    onDistrictChange(d);
-    onTalukChange('');
-  };
+  const taluks = district ? getTaluks(district) : [];
 
   return (
-    <View>
-      {/* District */}
-      <View style={s.group}>
-        <View style={s.labelRow}>
-          <Text style={s.labelIcon}>🗺️</Text>
-          <Text style={s.labelTxt}>District <Text style={s.req}>*</Text></Text>
-        </View>
+    <View style={p.wrap}>
+      {/* District selector */}
+      <View style={p.fieldGroup}>
+        <Text style={p.label}>🗺️ District <Text style={p.req}>*</Text></Text>
         <TouchableOpacity
-          style={[s.selector, district ? s.selectorDone : null]}
+          style={[p.selector, district && p.selectorDone]}
           onPress={() => setShowDistrict(true)}
           activeOpacity={0.85}
         >
-          <Text style={district ? s.selectorValue : s.selectorPlaceholder} numberOfLines={1}>
-            {district || 'Tap to select district…'}
+          <Text style={[p.selectorTxt, !district && p.placeholder]}>
+            {district || 'Select District'}
           </Text>
-          <View style={[s.badge, district ? s.badgeDone : null]}>
-            <Text style={[s.badgeTxt, district ? s.badgeTxtDone : null]}>
-              {district ? '✓' : '▾'}
-            </Text>
-          </View>
+          <Text style={p.chevron}>{district ? '✓' : '›'}</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Taluk — shown only after district selected */}
-      {district ? (
-        <View style={s.group}>
-          <View style={s.labelRow}>
-            <Text style={s.labelIcon}>📍</Text>
-            <Text style={s.labelTxt}>Taluk <Text style={s.req}>*</Text></Text>
-          </View>
-          <TouchableOpacity
-            style={[s.selector, taluk ? s.selectorDone : null]}
-            onPress={() => setShowTaluk(true)}
-            activeOpacity={0.85}
-          >
-            <Text style={taluk ? s.selectorValue : s.selectorPlaceholder} numberOfLines={1}>
-              {taluk || `Select taluk in ${district}…`}
-            </Text>
-            <View style={[s.badge, taluk ? s.badgeDone : null]}>
-              <Text style={[s.badgeTxt, taluk ? s.badgeTxtDone : null]}>
-                {taluk ? '✓' : '▾'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-          <Text style={s.hint}>{taluks.length} taluks in {district}</Text>
-        </View>
-      ) : (
-        <View style={s.lockedBox}>
-          <Text style={s.lockedIcon}>📍</Text>
-          <Text style={s.lockedTxt}>  Select a district first to see taluks</Text>
-        </View>
-      )}
+      {/* Taluk selector */}
+      <View style={p.fieldGroup}>
+        <Text style={p.label}>📍 Taluk <Text style={p.req}>*</Text></Text>
+        <TouchableOpacity
+          style={[p.selector, taluk && p.selectorDone, !district && p.selectorDisabled]}
+          onPress={() => district && setShowTaluk(true)}
+          activeOpacity={district ? 0.85 : 1}
+        >
+          <Text style={[p.selectorTxt, !taluk && p.placeholder]}>
+            {taluk || (district ? 'Select Taluk' : 'Select district first')}
+          </Text>
+          <Text style={p.chevron}>{taluk ? '✓' : '›'}</Text>
+        </TouchableOpacity>
+      </View>
 
       <PickerModal
         visible={showDistrict}
-        title="Select District"
+        title="District"
         items={TN_DISTRICTS}
-        selected={district}
-        onSelect={handleDistrictSelect}
+        onSelect={(d) => { onDistrictChange(d); onTalukChange(''); }}
         onClose={() => setShowDistrict(false)}
       />
       <PickerModal
         visible={showTaluk}
-        title={`Taluks in ${district}`}
+        title="Taluk"
         items={taluks}
-        selected={taluk}
         onSelect={onTalukChange}
         onClose={() => setShowTaluk(false)}
       />
@@ -155,43 +126,15 @@ export default function DistrictTalukPicker({ district, taluk, onDistrictChange,
   );
 }
 
-const s = StyleSheet.create({
-  group:               { marginBottom: 16 },
-  labelRow:            { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  labelIcon:           { fontSize: 18, marginRight: 8 },
-  labelTxt:            { fontSize: 14, fontWeight: '700', color: '#374151' },
-  req:                 { color: '#EF4444' },
-  selector:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F9FAFB', borderRadius: 14, borderWidth: 2, borderColor: '#E5E7EB', paddingHorizontal: 16, paddingVertical: 14 },
-  selectorDone:        { borderColor: COLORS.primary, backgroundColor: '#FAFFFE' },
-  selectorPlaceholder: { flex: 1, fontSize: 15, color: '#9CA3AF', marginRight: 10 },
-  selectorValue:       { flex: 1, fontSize: 15, fontWeight: '700', color: '#111827', marginRight: 10 },
-  badge:               { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  badgeDone:           { backgroundColor: COLORS.primary },
-  badgeTxt:            { fontSize: 14, color: '#6B7280', fontWeight: '700' },
-  badgeTxtDone:        { color: '#fff' },
-  hint:                { fontSize: 12, color: '#9CA3AF', marginTop: 5 },
-  lockedBox:           { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, padding: 14, borderWidth: 2, borderColor: '#E5E7EB', marginBottom: 16 },
-  lockedIcon:          { fontSize: 18, opacity: 0.35 },
-  lockedTxt:           { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
-});
-
-const m = StyleSheet.create({
-  safe:            { flex: 1, backgroundColor: '#fff' },
-  header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#145A3E', paddingHorizontal: 16, paddingVertical: 14 },
-  closeBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
-  closeTxt:        { color: '#fff', fontSize: 16, fontWeight: '700' },
-  title:           { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', color: '#fff' },
-  searchWrap:      { flexDirection: 'row', alignItems: 'center', margin: 12, backgroundColor: '#F9FAFB', borderRadius: 14, borderWidth: 1.5, borderColor: '#E5E7EB', paddingHorizontal: 14 },
-  searchIcon:      { fontSize: 16, marginRight: 10 },
-  searchInput:     { flex: 1, paddingVertical: 13, fontSize: 15, color: '#111827' },
-  clearTxt:        { fontSize: 16, color: '#9CA3AF', paddingLeft: 8 },
-  countTxt:        { fontSize: 12, color: '#9CA3AF', paddingHorizontal: 16, marginBottom: 4 },
-  item:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  itemSelected:    { backgroundColor: '#ECFDF5' },
-  itemTxt:         { fontSize: 15, color: '#374151' },
-  itemTxtSelected: { fontWeight: '700', color: COLORS.primary },
-  checkmark:       { fontSize: 18, color: COLORS.primary, fontWeight: '900' },
-  empty:           { alignItems: 'center', paddingTop: 60 },
-  emptyEmoji:      { fontSize: 40, marginBottom: 12 },
-  emptyTxt:        { fontSize: 15, color: '#9CA3AF' },
+const p = StyleSheet.create({
+  wrap:             { marginBottom: rs(6) },
+  fieldGroup:       { marginBottom: rs(14) },
+  label:            { fontSize: rf(13), fontWeight: '700', color: '#374151', marginBottom: rs(8) },
+  req:              { color: '#EF4444' },
+  selector:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderWidth: rs(1.5), borderColor: '#E5E7EB', borderRadius: rs(12), paddingVertical: rs(13), paddingHorizontal: rs(16) },
+  selectorDone:     { borderColor: COLORS.primary, backgroundColor: '#FAFFFE' },
+  selectorDisabled: { backgroundColor: '#F4F6F8', opacity: 0.6 },
+  selectorTxt:      { fontSize: rf(15), fontWeight: '600', color: '#111827', flex: 1 },
+  placeholder:      { color: '#C9D1DA', fontWeight: '400' },
+  chevron:          { fontSize: rf(18), color: COLORS.primary, fontWeight: '800' },
 });

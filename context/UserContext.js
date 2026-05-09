@@ -1,14 +1,16 @@
-import React, { createContext, useContext, useState } from 'react';
+// context/UserContext.js
+import React, { createContext, useContext, useState, useCallback } from 'react';
 
 const UserContext = createContext(null);
 
 export const UserProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
 
-  const updateProfile = (data) =>
-    setUserProfile((prev) => ({ ...prev, ...data }));
+  const updateProfile = useCallback((updates) => {
+    setUserProfile(prev => prev ? { ...prev, ...updates } : updates);
+  }, []);
 
-  const clearProfile = () => setUserProfile(null);
+  const clearProfile = useCallback(() => setUserProfile(null), []);
 
   return (
     <UserContext.Provider value={{ userProfile, setUserProfile, updateProfile, clearProfile }}>

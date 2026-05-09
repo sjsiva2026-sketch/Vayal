@@ -7,8 +7,8 @@ service cloud.firestore {
         'PASTE_ADMIN_UID_HERE'
       ];
     }
-    function isSignedIn()  { return request.auth != null; }
-    function isSelf(uid)   { return request.auth != null && request.auth.uid == uid; }
+    function isSignedIn() { return request.auth != null; }
+    function isSelf(uid)  { return request.auth != null && request.auth.uid == uid; }
 
     function touchesAdminFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
@@ -17,6 +17,7 @@ service cloud.firestore {
       ]);
     }
 
+    // ── USERS ──────────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read:   if isSelf(uid) || isAdmin();
       allow create: if isSelf(uid) && isSignedIn();
@@ -24,6 +25,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── BOOKINGS ───────────────────────────────────────────────────────────
     match /bookings/{id} {
       allow read:   if isSignedIn();
       allow create: if isSignedIn()
@@ -41,6 +43,7 @@ service cloud.firestore {
           && resource.data.paymentStatus != 'paid');
     }
 
+    // ── MACHINES ───────────────────────────────────────────────────────────
     match /machines/{id} {
       allow read:          if isSignedIn();
       allow create:        if isSignedIn()
@@ -49,6 +52,7 @@ service cloud.firestore {
         || (isSignedIn() && resource.data.ownerId == request.auth.uid);
     }
 
+    // ── COMMISSION PAYMENTS ────────────────────────────────────────────────
     match /commissionPayments/{id} {
       allow read: if isAdmin()
         || (isSignedIn() && resource.data.ownerId == request.auth.uid);
@@ -63,6 +67,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── RATINGS ────────────────────────────────────────────────────────────
     match /ratings/{id} {
       allow read:          if isSignedIn();
       allow create:        if isSignedIn()
@@ -70,13 +75,15 @@ service cloud.firestore {
       allow update,delete: if isAdmin();
     }
 
-    match /otpSessions/{id}            { allow read, write: if isSignedIn(); }
-    match /appConfig/{id}              { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /appAccount/{id}             { allow read: if isAdmin(); allow create: if isSignedIn(); allow update,delete: if isAdmin(); }
-    match /appAccountSummary/{id}      { allow read: if isAdmin(); allow write: if isSignedIn(); }
-    match /dailyPayments/{id}          { allow read, write: if isSignedIn(); }
-    match /pendingVerifications/{id}   { allow read, write: if isSignedIn(); }
-    match /upiTransactions/{id}        { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /{document=**}               { allow read, write: if false; }
+    // ── MISC ───────────────────────────────────────────────────────────────
+    match /otpSessions/{id}           { allow read, write: if isSignedIn(); }
+    match /appConfig/{id}             { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /appAccount/{id}            { allow read: if isAdmin(); allow create: if isSignedIn(); allow update,delete: if isAdmin(); }
+    match /appAccountSummary/{id}     { allow read: if isAdmin(); allow write: if isSignedIn(); }
+    match /dailyPayments/{id}         { allow read, write: if isSignedIn(); }
+    match /pendingVerifications/{id}  { allow read, write: if isSignedIn(); }
+    match /upiTransactions/{id}       { allow read: if isSignedIn(); allow write: if isAdmin(); }
+
+    match /{document=**} { allow read, write: if false; }
   }
 }

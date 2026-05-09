@@ -1,46 +1,39 @@
+// src/common/components/PhoneConnect.js
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Linking, Alert, StyleSheet } from 'react-native';
+import { rs, rf } from '../../../utils/responsive';
 import { COLORS } from '../../../constants/colors';
 
-export default function PhoneConnect({ phone, name, role = '', showLabel = true }) {
-  if (!phone) return null;
-
-  const handleCall = () => {
-    const url = `tel:+91${phone}`;
+export default function PhoneConnect({ phone, name, role }) {
+  const call = () => {
+    const url = `tel:${phone}`;
     Linking.canOpenURL(url)
-      .then((ok) => { if (ok) Linking.openURL(url); else Alert.alert('Error', 'Cannot open dialer'); })
-      .catch(() => Alert.alert('Error', 'Cannot open dialer'));
+      .then(ok => ok ? Linking.openURL(url) : Alert.alert('Error', 'Cannot open phone app'))
+      .catch(() => Alert.alert('Error', 'Cannot make call'));
   };
 
-  const handleWhatsApp = () => {
-    const msg = encodeURIComponent(`Hello ${name}, I am contacting you via Vayal app.`);
-    const url = `whatsapp://send?phone=91${phone}&text=${msg}`;
+  const whatsapp = () => {
+    const cleaned = phone.replace(/\D/g, '');
+    const number  = cleaned.startsWith('91') ? cleaned : `91${cleaned}`;
+    const url     = `whatsapp://send?phone=${number}`;
     Linking.canOpenURL(url)
-      .then((ok) => {
-        if (ok) Linking.openURL(url);
-        else Alert.alert('WhatsApp not installed', 'Please install WhatsApp to use this feature.');
-      })
+      .then(ok => ok ? Linking.openURL(url) : Alert.alert('WhatsApp not installed'))
       .catch(() => Alert.alert('Error', 'Cannot open WhatsApp'));
   };
 
   return (
-    <View style={s.container}>
-      {showLabel && (
-        <View style={s.labelRow}>
-          <Text style={s.roleTag}>{role}</Text>
-          <Text style={s.name}>{name}</Text>
-          <Text style={s.phoneText}>📞 +91 {phone}</Text>
-        </View>
-      )}
-      <View style={s.btnRow}>
-        <TouchableOpacity style={s.callBtn} onPress={handleCall} activeOpacity={0.8}>
-          <Text style={s.callIcon}>📞</Text>
-          <Text style={s.callText}> Call</Text>
+    <View style={s.card}>
+      <View style={s.info}>
+        <Text style={s.role}>{role}</Text>
+        <Text style={s.name}>{name}</Text>
+        <Text style={s.phone}>📞 +91 {phone}</Text>
+      </View>
+      <View style={s.actions}>
+        <TouchableOpacity style={s.callBtn} onPress={call} activeOpacity={0.85}>
+          <Text style={s.callTxt}>📞 Call</Text>
         </TouchableOpacity>
-        <View style={{ width: 10 }} />
-        <TouchableOpacity style={s.waBtn} onPress={handleWhatsApp} activeOpacity={0.8}>
-          <Text style={s.callIcon}>💬</Text>
-          <Text style={s.waText}> WhatsApp</Text>
+        <TouchableOpacity style={s.waBtn} onPress={whatsapp} activeOpacity={0.85}>
+          <Text style={s.waTxt}>💬 WhatsApp</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -48,15 +41,14 @@ export default function PhoneConnect({ phone, name, role = '', showLabel = true 
 }
 
 const s = StyleSheet.create({
-  container:  { backgroundColor: '#F0FAF5', borderRadius: 14, padding: 14, marginVertical: 10, borderWidth: 1, borderColor: COLORS.primaryLight },
-  labelRow:   { marginBottom: 10 },
-  roleTag:    { fontSize: 11, fontWeight: '700', color: '#fff', backgroundColor: COLORS.primary, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, marginBottom: 4 },
-  name:       { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
-  phoneText:  { fontSize: 13, color: COLORS.textSecondary, marginTop: 2 },
-  btnRow:     { flexDirection: 'row' },
-  callBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.primary, borderRadius: 10, paddingVertical: 10 },
-  waBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#25D366', borderRadius: 10, paddingVertical: 10 },
-  callIcon:   { fontSize: 16 },
-  callText:   { color: '#fff', fontWeight: '700', fontSize: 14 },
-  waText:     { color: '#fff', fontWeight: '700', fontSize: 14 },
+  card:    { backgroundColor: '#fff', borderRadius: rs(14), padding: rs(14), elevation: 2, borderWidth: 1, borderColor: '#F0F0F0', marginBottom: rs(12) },
+  info:    { marginBottom: rs(12) },
+  role:    { fontSize: rf(11), color: '#9CA3AF', fontWeight: '600', marginBottom: rs(2) },
+  name:    { fontSize: rf(15), fontWeight: '800', color: '#111827', marginBottom: rs(4) },
+  phone:   { fontSize: rf(13), color: COLORS.primary, fontWeight: '600' },
+  actions: { flexDirection: 'row', gap: rs(10) },
+  callBtn: { flex: 1, backgroundColor: COLORS.primaryLight, borderRadius: rs(10), paddingVertical: rs(10), alignItems: 'center', borderWidth: 1, borderColor: '#6EE7B7' },
+  callTxt: { fontSize: rf(13), fontWeight: '700', color: COLORS.primary },
+  waBtn:   { flex: 1, backgroundColor: '#E7F9E7', borderRadius: rs(10), paddingVertical: rs(10), alignItems: 'center', borderWidth: 1, borderColor: '#86EFAC' },
+  waTxt:   { fontSize: rf(13), fontWeight: '700', color: '#16A34A' },
 });

@@ -1,13 +1,14 @@
+// context/BookingContext.js
 import React, { createContext, useContext, useState } from 'react';
 
 const BookingContext = createContext(null);
 
 export const BookingProvider = ({ children }) => {
-  const [activeBooking, setActiveBooking] = useState(null);
-  const [bookings, setBookings]           = useState([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [activeBookings, setActiveBookings] = useState([]);
 
   return (
-    <BookingContext.Provider value={{ activeBooking, setActiveBooking, bookings, setBookings }}>
+    <BookingContext.Provider value={{ pendingCount, setPendingCount, activeBookings, setActiveBookings }}>
       {children}
     </BookingContext.Provider>
   );

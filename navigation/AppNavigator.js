@@ -1,9 +1,5 @@
 // navigation/AppNavigator.js
-// GUARD ORDER:
-//   1. No user            → RoleSelect
-//   2. Owner kycPassed=false → KycScreen  (STRICT: isVerified + kycStatus + accessGranted)
-//   3. Owner isLocked=true   → LockWall   (commission)
-//   4. Otherwise             → normal home
+// FIXED: KYC listener stale closure bug — admin approve now auto-navigates owner
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -17,7 +13,7 @@ import { FIcon }          from '../utils/icons';
 import { useAuth }        from '../context/AuthContext';
 import { useUser }        from '../context/UserContext';
 import { checkTimeLock, listenOwnerLockState, computeLockState } from '../firebase/commission';
-import { listenKycStatus }   from '../firebase/kyc';
+import { listenKycStatus } from '../firebase/kyc';
 import { COLORS }    from '../constants/colors';
 import { ROLES }     from '../constants/roles';
 import { ICONS }     from '../assets/index';
@@ -53,7 +49,7 @@ import KycVerificationList  from '../src/admin/screens/KycVerificationList';
 import Reports              from '../src/admin/screens/Reports';
 import AdminAppAccount      from '../src/admin/screens/AdminAppAccount';
 
-const Stack  = createNativeStackNavigator();
+const Stack = createNativeStackNavigator();
 const HEADER = {
   headerStyle:       { backgroundColor: '#fff', elevation: 0, shadowOpacity: 0, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   headerTintColor:   '#111827',
@@ -61,7 +57,6 @@ const HEADER = {
   headerBackTitleVisible: false,
 };
 
-// ── Check if owner has passed KYC ─────────────────────────────────────────
 // All 3 fields must be true — owner cannot bypass
 function ownerKycPassed(profile) {
   return profile?.isVerified    === true
@@ -71,14 +66,14 @@ function ownerKycPassed(profile) {
 
 function Splash() {
   return (
-    <LinearGradient colors={['#145A3E', '#1C7C54', '#2E9E6B']} style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
-      <View style={{ width:rs(110), height:rs(110), borderRadius:rs(28), overflow:'hidden', borderWidth:rs(3), borderColor:'rgba(255,255,255,0.25)', marginBottom:rs(24), backgroundColor:'rgba(255,255,255,0.15)', alignItems:'center', justifyContent:'center' }}>
+    <LinearGradient colors={['#145A3E', '#1C7C54', '#2E9E6B']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: rs(110), height: rs(110), borderRadius: rs(28), overflow: 'hidden', borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.25)', marginBottom: rs(24), backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
         {ICONS.logo
-          ? <Image source={ICONS.logo} style={{ width:'100%', height:'100%' }} resizeMode="cover" />
+          ? <Image source={ICONS.logo} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
           : <Text style={{ fontSize: rf(48) }}>🌾</Text>}
       </View>
-      <Text style={{ fontSize:rf(30), fontWeight:'900', color:'#fff', letterSpacing:2, marginBottom:rs(4) }}>Namma Vayal</Text>
-      <Text style={{ fontSize:rf(14), color:'rgba(255,255,255,0.65)', letterSpacing:3, marginBottom:rs(40) }}>நம்ம வாயல்</Text>
+      <Text style={{ fontSize: rf(30), fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: rs(4) }}>Namma Vayal</Text>
+      <Text style={{ fontSize: rf(14), color: 'rgba(255,255,255,0.65)', letterSpacing: 3, marginBottom: rs(40) }}>நம்ம வாயல்</Text>
       <ActivityIndicator size="large" color="rgba(255,255,255,0.85)" />
     </LinearGradient>
   );
@@ -93,7 +88,7 @@ function LockWallScreen({ navigation }) {
       <Text style={lw.sub}>Your 24-hour commission window has passed.{'\n'}Pay commission to restore full access.</Text>
       <View style={lw.infoCard}>
         <Text style={lw.infoTitle}>Locked until payment:</Text>
-        {['Accept new bookings','Start & complete work','Manage machines','All dashboard features'].map(t => (
+        {['Accept new bookings', 'Start & complete work', 'Manage machines', 'All dashboard features'].map(t => (
           <View key={t} style={lw.infoRow}>
             <Text style={lw.checkMark}>✕</Text>
             <Text style={lw.infoItem}>{t}</Text>
@@ -109,25 +104,27 @@ function LockWallScreen({ navigation }) {
 }
 
 const lw = StyleSheet.create({
-  safe:      { flex:1, alignItems:'center', justifyContent:'center', padding:rs(28) },
-  iconBox:   { width:rs(88), height:rs(88), borderRadius:rs(22), backgroundColor:'rgba(255,255,255,0.15)', alignItems:'center', justifyContent:'center', marginBottom:rs(14) },
-  appName:   { fontSize:rf(13), color:'rgba(255,255,255,0.55)', letterSpacing:2, marginBottom:rs(6) },
-  title:     { fontSize:rf(26), fontWeight:'900', color:'#fff', marginBottom:rs(10), textAlign:'center' },
-  sub:       { fontSize:rf(14), color:'rgba(255,255,255,0.82)', textAlign:'center', lineHeight:rf(22), marginBottom:rs(24) },
-  infoCard:  { backgroundColor:'rgba(255,255,255,0.12)', borderRadius:rs(16), padding:rs(18), width:'100%', marginBottom:rs(24) },
-  infoTitle: { fontSize:rf(13), fontWeight:'800', color:'rgba(255,255,255,0.7)', marginBottom:rs(10) },
-  infoRow:   { flexDirection:'row', alignItems:'center', marginBottom:rs(7) },
-  checkMark: { color:'#FCA5A5', marginRight:rs(8), fontSize:rf(13), fontWeight:'800' },
-  infoItem:  { fontSize:rf(13), color:'rgba(255,255,255,0.85)' },
-  payBtn:    { flexDirection:'row', alignItems:'center', justifyContent:'center', backgroundColor:'#fff', borderRadius:rs(16), paddingVertical:rs(17), width:'100%', elevation:4 },
-  payBtnTxt: { color:'#B91C1C', fontSize:rf(16), fontWeight:'900' },
+  safe:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: rs(28) },
+  iconBox:   { width: rs(88), height: rs(88), borderRadius: rs(22), backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: rs(14) },
+  appName:   { fontSize: rf(13), color: 'rgba(255,255,255,0.55)', letterSpacing: 2, marginBottom: rs(6) },
+  title:     { fontSize: rf(26), fontWeight: '900', color: '#fff', marginBottom: rs(10), textAlign: 'center' },
+  sub:       { fontSize: rf(14), color: 'rgba(255,255,255,0.82)', textAlign: 'center', lineHeight: rf(22), marginBottom: rs(24) },
+  infoCard:  { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: rs(16), padding: rs(18), width: '100%', marginBottom: rs(24) },
+  infoTitle: { fontSize: rf(13), fontWeight: '800', color: 'rgba(255,255,255,0.7)', marginBottom: rs(10) },
+  infoRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: rs(7) },
+  checkMark: { color: '#FCA5A5', marginRight: rs(8), fontSize: rf(13), fontWeight: '800' },
+  infoItem:  { fontSize: rf(13), color: 'rgba(255,255,255,0.85)' },
+  payBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderRadius: rs(16), paddingVertical: rs(17), width: '100%', elevation: 4 },
+  payBtnTxt: { color: '#B91C1C', fontSize: rf(16), fontWeight: '900' },
 });
 
 export default function AppNavigator() {
   const { user, loading: authLoading, userProfile: authProfile } = useAuth();
   const { userProfile: ctxProfile, setUserProfile, updateProfile } = useUser();
-  const navRef       = useNavigationContainerRef();
-  const lockTimerRef = useRef(null);
+  const navRef        = useNavigationContainerRef();
+  const lockTimerRef  = useRef(null);
+  // ── FIX: use ref to track KYC state — avoids stale closure bug ──────────
+  const kycPassedRef  = useRef(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -143,29 +140,44 @@ export default function AppNavigator() {
   const uid     = profile?.id;
   const role    = profile?.role;
 
+  // Keep ref in sync with profile
+  useEffect(() => {
+    kycPassedRef.current = ownerKycPassed(profile);
+  }, [profile?.isVerified, profile?.kycStatus, profile?.accessGranted]);
+
   // ── KYC real-time listener ──────────────────────────────────────────────
-  // Fires when admin approves → auto-navigate to OwnerHome
-  // Fires when admin revokes  → send back to KycScreen
+  // FIXED: use kycPassedRef (not profile from closure) to compare old vs new state
   useEffect(() => {
     if (!uid || role !== ROLES.OWNER) return;
+
     const unsub = listenKycStatus(uid, ({ kycStatus, accessGranted, isVerified }) => {
+      // Update profile in context
       updateProfile({ kycStatus, accessGranted, isVerified });
+
       if (!navRef.isReady()) return;
-      const passed = isVerified === true && kycStatus === 'verified' && accessGranted === true;
-      const wasPassed = ownerKycPassed(profile);
+
+      const passed    = isVerified === true && kycStatus === 'verified' && accessGranted === true;
+      const wasPassed = kycPassedRef.current;  // ← ref: always current, no stale closure
+
       if (passed && !wasPassed) {
+        // Admin just approved → go to OwnerHome
+        kycPassedRef.current = true;
         navRef.reset({ index: 0, routes: [{ name: 'OwnerHome' }] });
       } else if (!passed && wasPassed) {
+        // Admin revoked → back to KYC
+        kycPassedRef.current = false;
         navRef.reset({ index: 0, routes: [{ name: 'KycScreen' }] });
       }
     });
+
     return unsub;
   }, [uid, role]);
 
   // ── Commission lock listener ─────────────────────────────────────────────
   useEffect(() => {
     if (!uid || role !== ROLES.OWNER) return;
-    if (!ownerKycPassed(profile)) return; // KYC not done yet
+    if (!kycPassedRef.current) return;
+
     const unsub = listenOwnerLockState(uid, (state) => {
       const wasLocked = profile?.isLocked === true;
       updateProfile({
@@ -188,11 +200,11 @@ export default function AppNavigator() {
   // ── Precision lock timer ─────────────────────────────────────────────────
   useEffect(() => {
     clearTimeout(lockTimerRef.current);
-    if (!uid || role !== ROLES.OWNER)  return;
-    if (!ownerKycPassed(profile))      return;
+    if (!uid || role !== ROLES.OWNER)       return;
+    if (!kycPassedRef.current)              return;
     if (profile?.paymentStatus === 'paid' || profile?.isLocked) return;
     const { msRemaining } = computeLockState(profile);
-    if (!msRemaining || msRemaining <= 0) return;
+    if (!msRemaining || msRemaining <= 0)   return;
     lockTimerRef.current = setTimeout(async () => {
       const result = await checkTimeLock(uid).catch(() => null);
       if (result?.isLocked) {
@@ -213,13 +225,13 @@ export default function AppNavigator() {
       initialRoute = 'FarmerHome';
 
     } else if (role === ROLES.OWNER) {
-      // Strict 3-field KYC check — all must be true
-      if (!ownerKycPassed(profile)) {
+      const kycOk = ownerKycPassed(profile);
+      kycPassedRef.current = kycOk;
+      if (!kycOk) {
         initialRoute = 'KycScreen';
       } else {
-        const isLocked = profile?.isLocked === true
-                      || computeLockState(profile).shouldLock;
-        initialRoute = isLocked ? 'LockWall' : 'OwnerHome';
+        const isLocked = profile?.isLocked === true || computeLockState(profile).shouldLock;
+        initialRoute   = isLocked ? 'LockWall' : 'OwnerHome';
       }
 
     } else if (role === ROLES.ADMIN) {
@@ -246,9 +258,9 @@ export default function AppNavigator() {
         <Stack.Screen name="BookingConfirm" component={BookingConfirm}     options={{ title: 'Booking Confirmed' }} />
         <Stack.Screen name="RatingScreen"   component={RatingScreen}       options={{ title: 'Rate Experience' }} />
 
-        {/* Owner — KycScreen + LockWall always registered, gestureEnabled:false = no back swipe */}
-        <Stack.Screen name="KycScreen"     component={KycScreen}         options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="LockWall"      component={LockWallScreen}    options={{ headerShown: false, gestureEnabled: false }} />
+        {/* Owner */}
+        <Stack.Screen name="KycScreen"  component={KycScreen}      options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="LockWall"   component={LockWallScreen} options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen
           name="PayCommission"
           component={PayCommission}

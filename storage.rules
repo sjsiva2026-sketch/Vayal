@@ -12,14 +12,7 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
-    match /payments/{ownerId}/{filename} {
-      allow write:  if isSignedIn()
-        && request.auth.uid == ownerId && isValidImage();
-      allow read:   if isSignedIn()
-        && (request.auth.uid == ownerId || isAdmin());
-      allow delete: if isAdmin();
-    }
-
+    // KYC documents: profile, license, aadhar, vehicle
     match /kyc/{ownerId}/{filename} {
       allow write:  if isSignedIn()
         && request.auth.uid == ownerId && isValidImage();
@@ -28,6 +21,16 @@ service firebase.storage {
       allow delete: if isAdmin();
     }
 
+    // Payment screenshots
+    match /payments/{ownerId}/{filename} {
+      allow write:  if isSignedIn()
+        && request.auth.uid == ownerId && isValidImage();
+      allow read:   if isSignedIn()
+        && (request.auth.uid == ownerId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Profile photos
     match /profiles/{userId}/{filename} {
       allow write:  if isSignedIn()
         && request.auth.uid == userId && isValidImage();
