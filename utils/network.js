@@ -1,14 +1,22 @@
-// utils/network.js
+// utils/network.js — NetInfo இல்லாம simple version
 import { useEffect, useState } from 'react';
-import NetInfo from '@react-native-community/netinfo';
 
 export function useNetworkStatus() {
   const [isConnected, setIsConnected] = useState(true);
+
   useEffect(() => {
-    const unsub = NetInfo.addEventListener(state => {
-      setIsConnected(state.isConnected ?? true);
-    });
-    return unsub;
+    let netInfo = null;
+    try {
+      netInfo = require('@react-native-community/netinfo').default;
+      const unsub = netInfo.addEventListener(state => {
+        setIsConnected(state.isConnected ?? true);
+      });
+      return unsub;
+    } catch {
+      // NetInfo not installed — assume connected
+      setIsConnected(true);
+    }
   }, []);
+
   return isConnected;
 }
