@@ -1,21 +1,34 @@
 // src/owner/screens/OwnerProfile.js
+// Full profile — photo upload/delete, edit, KYC status, account menu, logout
+
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, SafeAreaView, ScrollView,
-  Alert, TouchableOpacity, TextInput, StatusBar,
-  ActivityIndicator, Image, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, SafeAreaView, ScrollView, Alert,
+  TouchableOpacity, TextInput, StatusBar, ActivityIndicator,
+  Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
-import { LinearGradient }  from 'expo-linear-gradient';
-import * as ImagePicker    from 'expo-image-picker';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { useAuth }         from '../../../context/AuthContext';
-import { useUser }         from '../../../context/UserContext';
-import { updateUser }      from '../../../firebase/firestore';
-import { storage }         from '../../../firebase/config';
-import { logout }          from '../../../firebase/auth';
-import { COLORS }          from '../../../constants/colors';
-import { rs, rf, H_PAD }   from '../../../utils/responsive';
-import DistrictTalukPicker from '../../common/components/DistrictTalukPicker';
+import { LinearGradient }   from 'expo-linear-gradient';
+import * as ImagePicker     from 'expo-image-picker';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { FIcon }            from '../../../utils/icons';
+import { useAuth }          from '../../../context/AuthContext';
+import { useUser }          from '../../../context/UserContext';
+import { updateUser }       from '../../../firebase/firestore';
+import { storage }          from '../../../firebase/config';
+import { logout }           from '../../../firebase/auth';
+import DistrictTalukPicker  from '../../common/components/DistrictTalukPicker';
+import { COLORS }           from '../../../constants/colors';
+import { rs, rf, H_PAD }    from '../../../utils/responsive';
+
+const AVATAR_SIZE = rs(100);
+const PHOTO_PATH  = (uid) => `profiles/${uid}/profile.jpg`;
+
+const KYC_BADGE = {
+  not_submitted: { bg: '#F3F4F6', color: '#374151', label: 'KYC Pending',   icon: '📋' },
+  pending:       { bg: '#FFF3CD', color: '#92400E', label: 'KYC Review',    icon: '⏳' },
+  verified:      { bg: '#DCFCE7', color: '#065F46', label: 'KYC Verified',  icon: '✅' },
+  rejected:      { bg: '#FEE2E2', color: '#B91C1C', label: 'KYC Rejected',  icon: '❌' },
+};
 
 export default function OwnerProfile({ navigation }) {
   const { setUser }                                  = useAuth();
@@ -25,65 +38,90 @@ export default function OwnerProfile({ navigation }) {
   const [name,         setName]         = useState(userProfile?.name     || '');
   const [district,     setDistrict]     = useState(userProfile?.district || '');
   const [taluk,        setTaluk]        = useState(userProfile?.taluk    || '');
-  const [loading,      setLoading]      = useState(false);
+  const [saving,       setSaving]       = useState(false);
   const [editMode,     setEditMode]     = useState(false);
-  const [photoURI,     setPhotoURI]     = useState(userProfile?.photoURL || null);
+  const [photoURL,     setPhotoURL]     = useState(
+    userProfile?.profilePhotoUrl || userProfile?.photoURL || null
+  );
   const [photoLoading, setPhotoLoading] = useState(false);
 
-  const handlePickPhoto = () =>
-    Alert.alert('Profile Photo', 'Choose an option', [
-      { text: 'Camera',        onPress: () => openPicker('camera')  },
-      { text: 'Photo Library', onPress: () => openPicker('library') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-
-  const openPicker = async (source) => {
-    try {
-      let result;
-      const opts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1,1], quality: 0.7 };
-      if (source === 'camera') {
-        const perm = await ImagePicker.requestCameraPermissionsAsync();
-        if (!perm.granted) { Alert.alert('Permission Denied'); return; }
-        result = await ImagePicker.launchCameraAsync(opts);
-      } else {
-        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) { Alert.alert('Permission Denied'); return; }
-        result = await ImagePicker.launchImageLibraryAsync(opts);
-      }
-      if (result.canceled || !result.assets?.[0]?.uri) return;
-      const uri = result.assets[0].uri;
-      setPhotoLoading(true);
-      try {
-        const resp = await fetch(uri);
-        const blob = await resp.blob();
-        const sRef = ref(storage, `profilePhotos/${uid}.jpg`);
-        await uploadBytes(sRef, blob);
-        const url = await getDownloadURL(sRef);
-        await updateUser(uid, { photoURL: url });
-        updateProfile({ photoURL: url });
-        setPhotoURI(url);
-      } catch { setPhotoURI(uri); }
-      finally { setPhotoLoading(false); }
-    } catch (e) { setPhotoLoading(false); Alert.alert('Error', e.message || 'Could not pick photo.'); }
+  // ── Photo: upload / delete ─────────────────────────────────────────────
+  const handlePhotoPress = () => {
+    const opts = [
+      { text: '📷 Camera',              onPress: () => pickPhoto('camera')  },
+      { text: '🖼️ Choose from Gallery', onPress: () => pickPhoto('gallery') },
+    ];
+    if (photoURL) opts.push({ text: '🗑️ Remove Photo', style: 'destructive', onPress: deletePhoto });
+    opts.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Profile Photo', 'Choose an option', opts);
   };
 
+  const pickPhoto = async (src) => {
+    try {
+      const pickerOpts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1,1], quality: 0.75 };
+      let result;
+      if (src === 'camera') {
+        const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+        if (!granted) { Alert.alert('Permission needed', 'Allow camera access.'); return; }
+        result = await ImagePicker.launchCameraAsync(pickerOpts);
+      } else {
+        const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!granted) { Alert.alert('Permission needed', 'Allow gallery access.'); return; }
+        result = await ImagePicker.launchImageLibraryAsync(pickerOpts);
+      }
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      setPhotoLoading(true);
+      try {
+        const uri  = result.assets[0].uri;
+        const resp = await fetch(uri);
+        const blob = await resp.blob();
+        const sRef = ref(storage, PHOTO_PATH(uid));
+        await uploadBytes(sRef, blob, { contentType: 'image/jpeg' });
+        const url  = await getDownloadURL(sRef);
+        await updateUser(uid, { profilePhotoUrl: url });
+        updateProfile({ profilePhotoUrl: url });
+        setPhotoURL(url);
+        Alert.alert('✅ Photo Updated', 'Your profile photo has been updated.');
+      } catch { Alert.alert('Upload Failed', 'Could not upload photo. Try again.'); }
+      finally { setPhotoLoading(false); }
+    } catch (e) { setPhotoLoading(false); }
+  };
+
+  const deletePhoto = () =>
+    Alert.alert('Remove Photo', 'Remove your profile photo?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+          setPhotoLoading(true);
+          try {
+            await deleteObject(ref(storage, PHOTO_PATH(uid))).catch(() => {});
+            await updateUser(uid, { profilePhotoUrl: null });
+            updateProfile({ profilePhotoUrl: null });
+            setPhotoURL(null);
+          } catch { Alert.alert('Error', 'Could not remove photo.'); }
+          finally { setPhotoLoading(false); }
+        },
+      },
+    ]);
+
+  // ── Save ───────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!name.trim()) { Alert.alert('Required', 'Name cannot be empty'); return; }
-    if (!district)    { Alert.alert('Required', 'Select your district'); return; }
-    if (!taluk)       { Alert.alert('Required', 'Select your taluk'); return; }
-    setLoading(true);
+    if (!name.trim()) { Alert.alert('Required', 'Please enter your name'); return; }
+    if (!district)    { Alert.alert('Required', 'Please select your district'); return; }
+    if (!taluk)       { Alert.alert('Required', 'Please select your taluk'); return; }
+    setSaving(true);
     try {
       const updates = { name: name.trim(), district, taluk };
       await updateUser(uid, updates);
       updateProfile(updates);
       setEditMode(false);
-      Alert.alert('Saved', 'Profile updated!');
-    } catch (e) { Alert.alert('Error', e.message); }
-    finally { setLoading(false); }
+      Alert.alert('✅ Saved', 'Your profile has been updated.');
+    } catch { Alert.alert('Error', 'Could not save. Try again.'); }
+    finally { setSaving(false); }
   };
 
+  // ── Logout ─────────────────────────────────────────────────────────────
   const handleLogout = () =>
-    Alert.alert('Logout', 'Are you sure?', [
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Logout', style: 'destructive', onPress: async () => {
           await logout(); clearProfile(); setUser(null);
@@ -92,117 +130,166 @@ export default function OwnerProfile({ navigation }) {
       },
     ]);
 
-  const Row = ({ icon, label, value }) => (
-    <View style={s.row}>
-      <View style={s.rowLeft}>
-        <Text style={s.rowIcon}>{icon}</Text>
-        <Text style={s.rowLabel}>  {label}</Text>
-      </View>
-      <Text style={s.rowValue}>{value || '—'}</Text>
-    </View>
-  );
+  const initials = (userProfile?.name || 'O')[0].toUpperCase();
+  const kycCfg   = KYC_BADGE[userProfile?.kycStatus || 'not_submitted'] || KYC_BADGE.not_submitted;
+  const isLocked = userProfile?.isLocked === true;
+
+  const MENU = [
+    { icon: '📋', label: 'My Machines',    sub: 'View and manage your machines',   onPress: () => navigation.navigate('MyMachines') },
+    { icon: '🔖', label: 'Booking History', sub: 'View all past bookings',          onPress: () => navigation.navigate('Requests') },
+    { icon: '📊', label: "Today's Work",    sub: 'Commission summary',              onPress: () => navigation.navigate('TodaysWork') },
+    { icon: '🔔', label: 'Notifications',   sub: 'Booking alerts & updates',        onPress: () => {} },
+    { icon: '❓', label: 'Help & Support',  sub: 'FAQs and contact us',             onPress: () => {} },
+    { icon: '🛡️', label: 'Privacy Policy', sub: 'How we use your data',            onPress: () => {} },
+  ];
 
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#145A3E" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Header */}
-          <LinearGradient colors={['#145A3E', '#1C7C54']} style={s.header}>
-            <View style={s.avatarWrap}>
-              <TouchableOpacity onPress={handlePickPhoto} activeOpacity={0.85} style={s.avatarTouch}>
-                {photoLoading ? (
-                  <View style={s.avatar}><ActivityIndicator color="#fff" size="large" /></View>
-                ) : photoURI ? (
-                  <Image source={{ uri: photoURI }} style={s.avatarImg} />
-                ) : (
-                  <View style={s.avatar}><Text style={{ fontSize: rf(44) }}>🚜</Text></View>
-                )}
-                <View style={s.cameraBadge}>
-                  <Text style={{ fontSize: rf(14) }}>📷</Text>
-                </View>
-              </TouchableOpacity>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+          {/* ── HEADER ── */}
+          <LinearGradient colors={['#145A3E', '#1C7C54', '#2E9E6B']} style={s.header}>
+            {/* Avatar */}
+            <TouchableOpacity style={s.avatarWrap} onPress={handlePhotoPress} activeOpacity={0.88}>
+              {photoLoading ? (
+                <View style={s.avatar}><ActivityIndicator color="#fff" size="large" /></View>
+              ) : photoURL ? (
+                <Image source={{ uri: photoURL }} style={s.avatarImg} />
+              ) : (
+                <View style={s.avatar}><Text style={s.avatarInitial}>{initials}</Text></View>
+              )}
+              <View style={s.editPhotoBadge}>
+                <Text style={{ fontSize: rf(12) }}>✏️</Text>
+              </View>
+            </TouchableOpacity>
+
+            <Text style={s.headerName}>{userProfile?.name || 'Owner'}</Text>
+            <Text style={s.headerPhone}>+91 {userProfile?.phone || '—'}</Text>
+
+            {/* Badges row */}
+            <View style={s.badgesRow}>
+              <View style={s.roleBadge}>
+                <Text style={s.roleBadgeTxt}>🚜 Machine Owner</Text>
+              </View>
+              <View style={[s.kycBadge, { backgroundColor: kycCfg.bg }]}>
+                <Text style={[s.kycBadgeTxt, { color: kycCfg.color }]}>{kycCfg.icon} {kycCfg.label}</Text>
+              </View>
             </View>
 
-            <Text style={s.displayName}>{userProfile?.name || 'Owner'}</Text>
-            <Text style={s.photoHint}>Tap photo to change</Text>
-            <View style={s.phonePill}>
-              <Text style={s.phonePillTxt}>📞  +91 {userProfile?.phone || '—'}</Text>
-            </View>
-
-            {userProfile?.isLocked && (
-              <TouchableOpacity style={s.lockPill} onPress={() => navigation.navigate('PayCommission')}>
-                <Text style={s.lockPillTxt}>🔒 Account Locked — Tap to Pay</Text>
+            {/* Lock warning */}
+            {isLocked && (
+              <TouchableOpacity
+                style={s.lockBanner}
+                onPress={() => navigation.navigate('PayCommission')}
+                activeOpacity={0.88}
+              >
+                <Text style={s.lockBannerTxt}>🔒 Account Locked — Tap to Pay Commission</Text>
               </TouchableOpacity>
             )}
           </LinearGradient>
 
-          {/* Details */}
-          <View style={s.content}>
-            <View style={s.card}>
-              <Text style={s.cardTitle}>My Details</Text>
-              <Row icon="👤" label="Name"     value={userProfile?.name} />
-              <Row icon="🗺️" label="District" value={userProfile?.district} />
-              <Row icon="📍" label="Taluk"    value={userProfile?.taluk} />
-              <Row icon="🏛️" label="State"   value="Tamil Nadu" />
-              <Row icon="🔐" label="Status"   value={userProfile?.isLocked ? '🔒 Locked' : '🔓 Active'} />
-            </View>
-
-            <TouchableOpacity style={s.editToggle} onPress={() => setEditMode(e => !e)}>
-              <Text style={s.editToggleTxt}>{editMode ? '✕  Cancel' : '✏️  Edit Profile'}</Text>
-            </TouchableOpacity>
-
-            {editMode && (
-              <View style={s.editCard}>
-                <View style={s.fieldGroup}>
-                  <Text style={s.fieldLabel}>👤 Full Name *</Text>
-                  <View style={[s.inputWrap, name && s.inputWrapDone]}>
-                    <TextInput
-                      style={s.input}
-                      value={name}
-                      onChangeText={setName}
-                      placeholder="Your full name"
-                      placeholderTextColor="#9CA3AF"
-                    />
-                    {name.length > 0 && <Text style={s.check}>✓</Text>}
-                  </View>
-                </View>
-
-                <DistrictTalukPicker
-                  district={district} taluk={taluk}
-                  onDistrictChange={setDistrict} onTalukChange={setTaluk}
-                />
-
-                <TouchableOpacity
-                  style={[s.saveBtn, loading && { opacity: 0.7 }]}
-                  onPress={handleSave}
-                  disabled={loading}
-                  activeOpacity={0.88}
-                >
-                  <LinearGradient
-                    colors={['#1C7C54', '#2E9E6B']}
-                    start={{ x:0, y:0 }} end={{ x:1, y:0 }}
-                    style={s.saveBtnGrad}
-                  >
-                    {loading
-                      ? <ActivityIndicator color="#fff" />
-                      : <Text style={s.saveBtnTxt}>Save Changes</Text>
-                    }
-                  </LinearGradient>
-                </TouchableOpacity>
+          {/* ── STATS ── */}
+          <View style={s.statsRow}>
+            {[
+              { label: 'District',  value: userProfile?.district     || '—', icon: '🗺️', color: '#1C7C54' },
+              { label: 'Taluk',     value: userProfile?.taluk        || '—', icon: '📍', color: '#3B82F6' },
+              { label: 'Vehicle',   value: userProfile?.vehicleNumber || '—', icon: '🚜', color: '#F59E0B' },
+            ].map((st, i) => (
+              <View key={st.label} style={[s.statItem, i < 2 && s.statBorder]}>
+                <Text style={[s.statValue, { color: st.color }]} numberOfLines={1}>{st.value}</Text>
+                <Text style={s.statLabel}>{st.icon} {st.label}</Text>
               </View>
-            )}
-
-            <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-              <Text style={s.logoutTxt}>⏻  Logout</Text>
-            </TouchableOpacity>
+            ))}
           </View>
 
-          <View style={{ height: rs(24) }} />
+          {/* ── EDIT BUTTON ── */}
+          <TouchableOpacity
+            style={[s.editProfileBtn, editMode && s.editProfileBtnActive]}
+            onPress={() => setEditMode(e => !e)}
+            activeOpacity={0.85}
+          >
+            <Text style={[s.editProfileBtnTxt, editMode && { color: '#EF4444' }]}>
+              {editMode ? '✕  Cancel Editing' : '✏️  Edit Profile'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* ── EDIT FORM ── */}
+          {editMode && (
+            <View style={s.editSection}>
+              <Text style={s.sectionLabel}>Personal Information</Text>
+              <View style={s.inputGroup}>
+                <Text style={s.inputLabel}>Full Name</Text>
+                <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Your full name" placeholderTextColor="#9CA3AF" />
+              </View>
+              <DistrictTalukPicker district={district} taluk={taluk} onDistrictChange={setDistrict} onTalukChange={setTaluk} />
+              <TouchableOpacity
+                style={[s.saveBtn, saving && { opacity: 0.7 }]}
+                onPress={handleSave}
+                disabled={saving}
+                activeOpacity={0.88}
+              >
+                {saving
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.saveBtnTxt}>Save Changes</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── DETAILS CARD ── */}
+          <View style={s.detailsCard}>
+            <Text style={s.sectionLabel}>Account Details</Text>
+            {[
+              { icon: '👤', label: 'Name',         value: userProfile?.name          || '—' },
+              { icon: '📞', label: 'Phone',         value: `+91 ${userProfile?.phone || '—'}` },
+              { icon: '🗺️', label: 'District',     value: userProfile?.district       || '—' },
+              { icon: '📍', label: 'Taluk',         value: userProfile?.taluk          || '—' },
+              { icon: '🚜', label: 'Vehicle No.',   value: userProfile?.vehicleNumber  || '—' },
+              { icon: '🔐', label: 'Account Status',value: isLocked ? '🔒 Locked' : '🔓 Active' },
+            ].map((row, i, arr) => (
+              <View key={row.label} style={[s.detailRow, i < arr.length - 1 && s.detailBorder]}>
+                <View style={s.detailLeft}>
+                  <Text style={s.detailIcon}>{row.icon}</Text>
+                  <Text style={s.detailLabel}>{row.label}</Text>
+                </View>
+                <Text style={s.detailValue} numberOfLines={1}>{row.value}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* ── MENU ── */}
+          <Text style={s.sectionHeaderTxt}>MENU</Text>
+          <View style={s.menuCard}>
+            {MENU.map((item, i) => (
+              <TouchableOpacity
+                key={item.label}
+                style={[s.menuRow, i < MENU.length - 1 && s.menuRowBorder]}
+                onPress={item.onPress}
+                activeOpacity={0.7}
+              >
+                <View style={s.menuIconWrap}>
+                  <Text style={s.menuIcon}>{item.icon}</Text>
+                </View>
+                <View style={s.menuBody}>
+                  <Text style={s.menuLabel}>{item.label}</Text>
+                  <Text style={s.menuSub} numberOfLines={1}>{item.sub}</Text>
+                </View>
+                <FIcon name="chevron-right" size={rs(18)} color="#D1D5DB" fallback="›" />
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* ── LOGOUT ── */}
+          <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
+            <Text style={s.logoutIcon}>⏻</Text>
+            <Text style={s.logoutTxt}>Logout</Text>
+          </TouchableOpacity>
+
+          <Text style={s.version}>நம்ம வயல் 🌾  v1.0.4</Text>
+
+          <View style={{ height: rs(40) }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -210,45 +297,72 @@ export default function OwnerProfile({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  safe:           { flex: 1, backgroundColor: '#F4F6F8' },
-  scroll:         { flexGrow: 1 },
+  safe:               { flex: 1, backgroundColor: '#F4F5F7' },
+  scroll:             { flexGrow: 1, paddingBottom: rs(20) },
 
-  header:         { paddingTop: rs(50), paddingBottom: rs(32), alignItems: 'center' },
-  avatarWrap:     { marginBottom: rs(14) },
-  avatarTouch:    { position: 'relative' },
-  avatar:         { width: rs(100), height: rs(100), borderRadius: rs(50), backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.5)' },
-  avatarImg:      { width: rs(100), height: rs(100), borderRadius: rs(50), borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.5)' },
-  cameraBadge:    { position: 'absolute', bottom: rs(2), right: rs(2), width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', elevation: 4, borderWidth: rs(1.5), borderColor: '#E5E7EB' },
-  displayName:    { fontSize: rf(22), fontWeight: '900', color: '#fff', marginBottom: rs(4) },
-  photoHint:      { fontSize: rf(11), color: 'rgba(255,255,255,0.6)', marginBottom: rs(10) },
-  phonePill:      { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: rs(20), paddingHorizontal: rs(14), paddingVertical: rs(6), marginBottom: rs(8) },
-  phonePillTxt:   { fontSize: rf(14), fontWeight: '700', color: '#fff' },
-  lockPill:       { backgroundColor: '#EF4444', borderRadius: rs(20), paddingHorizontal: rs(14), paddingVertical: rs(6), marginTop: rs(6) },
-  lockPillTxt:    { fontSize: rf(13), fontWeight: '700', color: '#fff' },
+  // Header
+  header:             { paddingTop: rs(32), paddingBottom: rs(28), alignItems: 'center', paddingHorizontal: H_PAD },
+  avatarWrap:         { position: 'relative', marginBottom: rs(14) },
+  avatar:             { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE/2, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.6)' },
+  avatarImg:          { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE/2, borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.6)' },
+  avatarInitial:      { fontSize: rf(42), fontWeight: '900', color: '#fff' },
+  editPhotoBadge:     { position: 'absolute', bottom: 0, right: 0, width: rs(30), height: rs(30), borderRadius: rs(15), backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', elevation: 4, borderWidth: rs(2), borderColor: '#E5E7EB' },
+  headerName:         { fontSize: rf(22), fontWeight: '900', color: '#fff', marginBottom: rs(4) },
+  headerPhone:        { fontSize: rf(14), color: 'rgba(255,255,255,0.8)', marginBottom: rs(12) },
+  badgesRow:          { flexDirection: 'row', gap: rs(8), marginBottom: rs(8) },
+  roleBadge:          { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: rs(20), paddingHorizontal: rs(12), paddingVertical: rs(5) },
+  roleBadgeTxt:       { fontSize: rf(12), color: '#fff', fontWeight: '700' },
+  kycBadge:           { borderRadius: rs(20), paddingHorizontal: rs(12), paddingVertical: rs(5) },
+  kycBadgeTxt:        { fontSize: rf(12), fontWeight: '700' },
+  lockBanner:         { backgroundColor: '#EF4444', borderRadius: rs(12), paddingHorizontal: rs(16), paddingVertical: rs(8), marginTop: rs(8) },
+  lockBannerTxt:      { fontSize: rf(12), color: '#fff', fontWeight: '700' },
 
-  content:        { padding: rs(16) },
-  card:           { backgroundColor: '#fff', borderRadius: rs(18), padding: rs(16), marginBottom: rs(12), elevation: 2 },
-  cardTitle:      { fontSize: rf(15), fontWeight: '800', color: '#111827', marginBottom: rs(12) },
-  row:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: rs(10), borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  rowLeft:        { flexDirection: 'row', alignItems: 'center' },
-  rowIcon:        { fontSize: rf(16) },
-  rowLabel:       { fontSize: rf(13), color: '#6B7280' },
-  rowValue:       { fontSize: rf(13), fontWeight: '700', color: '#111827', flexShrink: 1, textAlign: 'right', maxWidth: '55%' },
+  // Stats
+  statsRow:           { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: rs(16), marginTop: -rs(16), borderRadius: rs(16), elevation: 4, overflow: 'hidden', marginBottom: rs(12) },
+  statItem:           { flex: 1, alignItems: 'center', paddingVertical: rs(14) },
+  statBorder:         { borderRightWidth: 1, borderRightColor: '#F0F0F0' },
+  statValue:          { fontSize: rf(12), fontWeight: '800', marginBottom: rs(4) },
+  statLabel:          { fontSize: rf(10), color: '#9CA3AF' },
 
-  editToggle:     { backgroundColor: '#fff', borderRadius: rs(14), padding: rs(14), alignItems: 'center', marginBottom: rs(12), borderWidth: rs(1.5), borderColor: COLORS.primary, elevation: 1 },
-  editToggleTxt:  { fontSize: rf(14), fontWeight: '700', color: COLORS.primary },
+  // Edit button
+  editProfileBtn:     { marginHorizontal: rs(16), marginBottom: rs(4), backgroundColor: '#fff', borderRadius: rs(12), paddingVertical: rs(13), alignItems: 'center', borderWidth: rs(1.5), borderColor: COLORS.primary, elevation: 1 },
+  editProfileBtnActive: { borderColor: '#EF4444' },
+  editProfileBtnTxt:  { fontSize: rf(14), fontWeight: '700', color: COLORS.primary },
 
-  editCard:       { backgroundColor: '#fff', borderRadius: rs(18), padding: rs(16), marginBottom: rs(12), elevation: 2 },
-  fieldGroup:     { marginBottom: rs(16) },
-  fieldLabel:     { fontSize: rf(14), fontWeight: '700', color: '#374151', marginBottom: rs(8) },
-  inputWrap:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: rs(14), borderWidth: rs(2), borderColor: '#E5E7EB', paddingHorizontal: rs(16) },
-  inputWrapDone:  { borderColor: COLORS.primary, backgroundColor: '#FAFFFE' },
-  input:          { flex: 1, paddingVertical: rs(14), fontSize: rf(15), color: '#111827' },
-  check:          { fontSize: rf(18), color: COLORS.primary },
-  saveBtn:        { borderRadius: rs(14), overflow: 'hidden', marginTop: rs(4) },
-  saveBtnGrad:    { paddingVertical: rs(15), alignItems: 'center' },
-  saveBtnTxt:     { color: '#fff', fontSize: rf(16), fontWeight: '800' },
+  // Edit form
+  editSection:        { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), padding: rs(16), marginBottom: rs(12), elevation: 1 },
+  sectionLabel:       { fontSize: rf(13), fontWeight: '700', color: '#6B7280', marginBottom: rs(12) },
+  inputGroup:         { marginBottom: rs(14) },
+  inputLabel:         { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: rs(6) },
+  input:              { backgroundColor: '#F9FAFB', borderWidth: rs(1.5), borderColor: '#E5E7EB', borderRadius: rs(12), paddingVertical: rs(12), paddingHorizontal: rs(14), fontSize: rf(14), color: '#111827' },
+  saveBtn:            { backgroundColor: COLORS.primary, borderRadius: rs(12), paddingVertical: rs(14), alignItems: 'center', marginTop: rs(4) },
+  saveBtnTxt:         { color: '#fff', fontSize: rf(15), fontWeight: '800' },
 
-  logoutBtn:      { backgroundColor: '#FEE2E2', borderRadius: rs(14), padding: rs(15), alignItems: 'center' },
-  logoutTxt:      { color: '#EF4444', fontWeight: '800', fontSize: rf(15) },
+  // Details card
+  detailsCard:        { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), padding: rs(16), marginBottom: rs(12), elevation: 1 },
+  detailRow:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: rs(11) },
+  detailBorder:       { borderBottomWidth: 1, borderBottomColor: '#F4F5F7' },
+  detailLeft:         { flexDirection: 'row', alignItems: 'center' },
+  detailIcon:         { fontSize: rf(16), marginRight: rs(10), width: rs(24) },
+  detailLabel:        { fontSize: rf(13), color: '#6B7280' },
+  detailValue:        { fontSize: rf(13), fontWeight: '700', color: '#111827', maxWidth: '55%', textAlign: 'right' },
+
+  // Section header
+  sectionHeaderTxt:   { paddingHorizontal: H_PAD, marginTop: rs(16), marginBottom: rs(8), fontSize: rf(12), fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.5 },
+
+  // Menu
+  menuCard:           { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), overflow: 'hidden', elevation: 1, marginBottom: rs(12) },
+  menuRow:            { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(16), paddingVertical: rs(14) },
+  menuRowBorder:      { borderBottomWidth: 1, borderBottomColor: '#F4F5F7' },
+  menuIconWrap:       { width: rs(38), height: rs(38), borderRadius: rs(10), backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
+  menuIcon:           { fontSize: rf(18) },
+  menuBody:           { flex: 1 },
+  menuLabel:          { fontSize: rf(14), fontWeight: '600', color: '#111827', marginBottom: rs(2) },
+  menuSub:            { fontSize: rf(11), color: '#9CA3AF' },
+
+  // Logout
+  logoutBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8), marginHorizontal: rs(16), backgroundColor: '#FEF2F2', borderRadius: rs(14), paddingVertical: rs(15), marginBottom: rs(8) },
+  logoutIcon:         { fontSize: rf(18), color: '#EF4444' },
+  logoutTxt:          { fontSize: rf(15), fontWeight: '800', color: '#EF4444' },
+  version:            { textAlign: 'center', fontSize: rf(11), color: '#9CA3AF' },
 });
