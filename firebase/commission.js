@@ -1,41 +1,159 @@
 // firebase/commission.js
-// COMMISSION RULE: Rs.20 per hectare ONLY
-// LOCK RULE:       timePassed >= 24h AND paymentStatus != 'paid' → isLocked = true
-// HIDE RULE:       timePassed < 24h  → PayCommission tab COMPLETELY HIDDEN
+// FIXED: Timestamp conversion bug — otpVerifiedAt Firestore Timestamp OR ISO string
+// FIXED: checkCommissionLock() directly updates Firestore
+// FIXED: 30-second polling added in listenOwnerLockState
+// TEST: 5 minutes lock window
 
 import {
-  doc, getDoc, updateDoc, setDoc, onSnapshot, runTransaction, serverTimestamp,
+  doc, getDoc, updateDoc, setDoc, onSnapshot, runTransaction, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
 
 export const COMMISSION_RATE = 20;
-export const LOCK_WINDOW_MS  = 24 * 60 * 60 * 1000;
+export const LOCK_WINDOW_MS  = 5 * 60 * 1000; // 5 minutes (testing) → change to 24*60*60*1000 for production
 
-// ── Pure time util ─────────────────────────────────────────────────────────
+// ── Convert ANY timestamp format to milliseconds ───────────────────────────
+// Handles: Firestore Timestamp, ISO string, Date object, number
+function toMs(value) {
+  if (!value) return null;
+  // Firestore Timestamp object
+  if (value?.toDate) return value.toDate().getTime();
+  // Already a number
+  if (typeof value === 'number') return value;
+  // ISO string or Date
+  const ms = new Date(value).getTime();
+  return isNaN(ms) ? null : ms;
+}
+
+// ── Central lock state calculator ─────────────────────────────────────────
 export function computeLockState(userDoc) {
   const empty = { shouldLock: false, msRemaining: null, timePassed: null, isWithin24h: false };
   if (!userDoc) return empty;
+
   const { otpVerifiedAt, paymentStatus } = userDoc;
   if (paymentStatus === 'paid') return empty;
   if (!otpVerifiedAt)           return empty;
-  const verifiedMs  = new Date(otpVerifiedAt).getTime();
-  if (isNaN(verifiedMs))        return empty;
-  const timePassed  = Date.now() - verifiedMs;
-  const msRemaining = LOCK_WINDOW_MS - timePassed;
-  const shouldLock  = timePassed >= LOCK_WINDOW_MS;
+
+  // ── CRITICAL FIX: convert Firestore Timestamp correctly ──────────────────
+  const verifiedMs = toMs(otpVerifiedAt);
+  if (!verifiedMs) return empty;
+
+  const currentTime = Date.now();
+  const expiryTime  = verifiedMs + LOCK_WINDOW_MS;
+  const timePassed  = currentTime - verifiedMs;
+  const msRemaining = expiryTime - currentTime;
+  const shouldLock  = currentTime > expiryTime;
+
+  // Debug logs (remove in production)
+  console.log('[Commission] Current Time:', new Date(currentTime).toISOString());
+  console.log('[Commission] OTP Time:    ', new Date(verifiedMs).toISOString());
+  console.log('[Commission] Expiry Time: ', new Date(expiryTime).toISOString());
+  console.log('[Commission] Payment:     ', paymentStatus);
+  console.log('[Commission] isLocked:    ', shouldLock);
+  console.log('[Commission] Remaining:   ', Math.round(msRemaining / 1000), 'seconds');
+
   return {
     shouldLock,
     msRemaining:  Math.max(0, msRemaining),
     timePassed,
     isWithin24h:  !shouldLock,
+    expiryTime,
   };
 }
 
-// ── 1. Complete job with OTP ────────────────────────────────────────────────
+// ── CENTRAL LOCK CHECK — reads Firestore + updates isLocked directly ───────
+export async function checkCommissionLock(ownerId) {
+  const noLock = { isLocked: false, msRemaining: null, paymentStatus: null };
+  if (!ownerId) return noLock;
+  try {
+    const snap = await getDoc(doc(db, 'users', ownerId));
+    if (!snap.exists()) return noLock;
+    const data = snap.data();
+
+    if (data.paymentStatus === 'paid') return noLock;
+    if (!data.otpVerifiedAt)           return noLock;
+
+    const { shouldLock, msRemaining, isWithin24h, expiryTime } = computeLockState(data);
+
+    // ── DIRECTLY UPDATE FIRESTORE if expired ─────────────────────────────
+    if (shouldLock && data.isLocked !== true) {
+      console.log('[Commission] Timer expired! Locking account in Firestore...');
+      await updateDoc(doc(db, 'users', ownerId), { isLocked: true });
+    }
+
+    const isLocked = shouldLock || data.isLocked === true;
+    return {
+      isLocked,
+      msRemaining:     Math.max(0, msRemaining || 0),
+      isWithin24h:     isWithin24h,
+      paymentStatus:   data.paymentStatus,
+      commissionAmount:data.commissionAmount || 0,
+      otpVerifiedAt:   data.otpVerifiedAt,
+      expiryTime,
+    };
+  } catch (e) {
+    console.warn('[Commission] checkCommissionLock error:', e.message);
+    return noLock;
+  }
+}
+
+// Alias for backward compatibility
+export const checkTimeLock = checkCommissionLock;
+
+// ── Realtime listener + 30-second polling ─────────────────────────────────
+export function listenOwnerLockState(ownerId, onChange) {
+  if (!ownerId) return () => {};
+
+  let intervalId = null;
+
+  // Poll every 30 seconds — catches cases where onSnapshot misses time-based lock
+  const poll = async () => {
+    const result = await checkCommissionLock(ownerId).catch(() => null);
+    if (result) onChange(result);
+  };
+  intervalId = setInterval(poll, 30 * 1000);
+
+  // Realtime Firestore listener
+  const unsub = onSnapshot(
+    doc(db, 'users', ownerId),
+    async (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+
+      // Re-run lock check to handle timestamp conversion correctly
+      const { shouldLock, msRemaining, isWithin24h } = computeLockState(d);
+
+      // Update Firestore if expired but not yet locked
+      if (shouldLock && d.isLocked !== true && d.paymentStatus !== 'paid') {
+        await updateDoc(doc(db, 'users', ownerId), { isLocked: true }).catch(() => {});
+      }
+
+      const isLocked = d.paymentStatus === 'paid' ? false : (shouldLock || d.isLocked === true);
+
+      onChange({
+        isLocked,
+        paymentStatus:    d.paymentStatus    ?? 'none',
+        paymentDeadline:  d.paymentDeadline  ?? null,
+        otpVerifiedAt:    d.otpVerifiedAt    ?? null,
+        commissionAmount: d.commissionAmount ?? 0,
+        msRemaining,
+        isWithin24h,
+      });
+    },
+    (e) => console.warn('[Commission] onSnapshot error:', e.message),
+  );
+
+  return () => {
+    unsub();
+    if (intervalId) clearInterval(intervalId);
+  };
+}
+
+// ── Complete job with OTP ──────────────────────────────────────────────────
 export async function completeJobWithOTP(bookingId, hectare, ownerId) {
   const bookingRef = doc(db, 'bookings', bookingId);
-  const ownerRef   = doc(db, 'users', ownerId);
+  const ownerRef   = doc(db, 'users',    ownerId);
 
   return runTransaction(db, async (txn) => {
     const [bookingSnap, ownerSnap] = await Promise.all([
@@ -46,80 +164,53 @@ export async function completeJobWithOTP(bookingId, hectare, ownerId) {
     if (bData.status === 'completed' || bData.isCommissionAdded) {
       return { alreadyCompleted: true };
     }
-    const thisCommission   = Math.round(hectare * COMMISSION_RATE);
-    const oData            = ownerSnap.exists() ? ownerSnap.data() : {};
-    const existingAmt      = oData.commissionAmount || 0;
-    const newTotal         = existingAmt + thisCommission;
-    const now              = new Date().toISOString();
-    const today            = now.slice(0, 10);
-    const isFirst          = !oData.otpVerifiedAt || oData.paymentStatus === 'paid';
-    const otpVerifiedAt    = isFirst ? now : oData.otpVerifiedAt;
-    const paymentDeadline  = isFirst
+
+    const thisCommission = Math.round(hectare * COMMISSION_RATE);
+    const oData          = ownerSnap.exists() ? ownerSnap.data() : {};
+    const existingAmt    = oData.commissionAmount || 0;
+    const newTotal       = existingAmt + thisCommission;
+    const now            = new Date().toISOString();
+    const today          = now.slice(0, 10);
+
+    // Only set otpVerifiedAt on first completion (or after paid reset)
+    const isFirst       = !oData.otpVerifiedAt || oData.paymentStatus === 'paid';
+    const otpVerifiedAt = isFirst ? now : oData.otpVerifiedAt;
+    const paymentDeadline = isFirst
       ? new Date(Date.now() + LOCK_WINDOW_MS).toISOString()
       : oData.paymentDeadline;
 
     txn.update(bookingRef, {
-      status: 'completed', otpVerifiedAt: now,
-      hectareCompleted: hectare, commissionAmount: thisCommission,
-      commission: thisCommission, paymentStatus: 'pending',
-      isCommissionAdded: true, isLocked: false, paymentDeadline,
+      status:            'completed',
+      otpVerifiedAt:     now,
+      hectareCompleted:  hectare,
+      commissionAmount:  thisCommission,
+      commission:        thisCommission,
+      paymentStatus:     'pending',
+      isCommissionAdded: true,
+      isLocked:          false,
+      paymentDeadline,
     });
+
     txn.update(ownerRef, {
-      otpVerifiedAt, paymentDeadline,
-      commissionAmount: newTotal, commissionDate: today,
-      paymentStatus: 'pending', isLocked: false,
+      otpVerifiedAt,
+      paymentDeadline,
+      commissionAmount:  newTotal,
+      commissionDate:    today,
+      paymentStatus:     'pending',
+      isLocked:          false,
     });
+
     return {
-      alreadyCompleted: false, thisCommission,
-      commissionAmount: newTotal, otpVerifiedAt, paymentDeadline,
+      alreadyCompleted: false,
+      thisCommission,
+      commissionAmount: newTotal,
+      otpVerifiedAt,
+      paymentDeadline,
     };
   });
 }
 
-// ── 2. Time-lock check ─────────────────────────────────────────────────────
-export async function checkTimeLock(ownerId) {
-  const noLock = { isLocked: false, shouldShowPayButton: false, msRemaining: null };
-  if (!ownerId) return noLock;
-  try {
-    const snap = await getDoc(doc(db, 'users', ownerId));
-    if (!snap.exists()) return noLock;
-    const data = snap.data();
-    if (data.paymentStatus === 'paid') return noLock;
-    const { shouldLock, msRemaining, isWithin24h } = computeLockState(data);
-    if (shouldLock && !data.isLocked) {
-      await updateDoc(doc(db, 'users', ownerId), { isLocked: true });
-    }
-    const locked = shouldLock || data.isLocked === true;
-    return {
-      isLocked: locked, shouldShowPayButton: locked,
-      hidePayButton: isWithin24h, msRemaining,
-      paymentStatus: data.paymentStatus,
-      commissionAmount: data.commissionAmount || 0,
-      otpVerifiedAt: data.otpVerifiedAt || null,
-    };
-  } catch (e) { console.warn('checkTimeLock:', e.message); return noLock; }
-}
-
-// ── 3. Realtime listener ───────────────────────────────────────────────────
-export function listenOwnerLockState(ownerId, onChange) {
-  if (!ownerId) return () => {};
-  return onSnapshot(doc(db, 'users', ownerId), (snap) => {
-    if (!snap.exists()) return;
-    const d = snap.data();
-    const { shouldLock, msRemaining, isWithin24h } = computeLockState(d);
-    const locked = d.paymentStatus === 'paid' ? false : (shouldLock || d.isLocked === true);
-    onChange({
-      isLocked: locked,
-      paymentStatus:    d.paymentStatus   ?? 'none',
-      paymentDeadline:  d.paymentDeadline ?? null,
-      otpVerifiedAt:    d.otpVerifiedAt   ?? null,
-      commissionAmount: d.commissionAmount ?? 0,
-      msRemaining, isWithin24h,
-    });
-  }, (e) => console.warn('listenOwnerLockState:', e.message));
-}
-
-// ── 4. Upload screenshot ───────────────────────────────────────────────────
+// ── Upload screenshot ──────────────────────────────────────────────────────
 export async function uploadPaymentScreenshot(ownerId, imageUri) {
   const response   = await fetch(imageUri);
   const blob       = await response.blob();
@@ -129,32 +220,40 @@ export async function uploadPaymentScreenshot(ownerId, imageUri) {
   return getDownloadURL(storageRef);
 }
 
-// ── 5. Submit proof (no transactionId) ────────────────────────────────────
+// ── Submit payment proof ───────────────────────────────────────────────────
 export async function submitPaymentProof({ ownerId, screenshotUrl, amount, date }) {
   await setDoc(doc(db, 'commissionPayments', `${ownerId}_${date}`), {
-    ownerId, paymentProofUrl: screenshotUrl,
-    amount, date, paymentStatus: 'pending_verification',
-    submittedAt: serverTimestamp(), adminVerified: false,
+    ownerId,
+    paymentProofUrl: screenshotUrl,
+    amount,
+    date,
+    paymentStatus:   'pending_verification',
+    submittedAt:     serverTimestamp(),
+    adminVerified:   false,
   }, { merge: true });
+
   await updateDoc(doc(db, 'users', ownerId), {
-    paymentStatus: 'pending_verification',
+    paymentStatus:   'pending_verification',
     paymentProofUrl: screenshotUrl,
   });
 }
 
-// ── 6. Admin verify ────────────────────────────────────────────────────────
+// ── Admin: Verify payment ──────────────────────────────────────────────────
 export async function adminVerifyPayment(ownerId, docId) {
   await updateDoc(doc(db, 'commissionPayments', docId), {
     paymentStatus: 'paid', adminVerified: true, verifiedAt: serverTimestamp(),
   });
   await updateDoc(doc(db, 'users', ownerId), {
-    isLocked: false, paymentStatus: 'paid',
-    otpVerifiedAt: null, paymentDeadline: null,
-    commissionAmount: 0, paymentProofUrl: null,
+    isLocked:         false,
+    paymentStatus:    'paid',
+    otpVerifiedAt:    null,
+    paymentDeadline:  null,
+    commissionAmount: 0,
+    paymentProofUrl:  null,
   });
 }
 
-// ── 7. Admin reject ────────────────────────────────────────────────────────
+// ── Admin: Reject payment ──────────────────────────────────────────────────
 export async function adminRejectPayment(ownerId, docId) {
   await updateDoc(doc(db, 'commissionPayments', docId), {
     paymentStatus: 'rejected', adminVerified: false, rejectedAt: serverTimestamp(),
