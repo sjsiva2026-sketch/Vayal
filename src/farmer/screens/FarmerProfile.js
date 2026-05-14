@@ -1,28 +1,29 @@
 // src/farmer/screens/FarmerProfile.js
-// Full profile — photo upload/delete, edit details, stats, account menu, logout
+// Full profile — photo upload/delete, stats, booking history, menu, logout
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, Alert,
   TouchableOpacity, TextInput, StatusBar, ActivityIndicator,
-  Image, KeyboardAvoidingView, Platform, Dimensions,
+  Image, KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { LinearGradient }   from 'expo-linear-gradient';
 import * as ImagePicker     from 'expo-image-picker';
+import { onSnapshot, doc, collection, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { FIcon }            from '../../../utils/icons';
 import { useAuth }          from '../../../context/AuthContext';
 import { useUser }          from '../../../context/UserContext';
 import { updateUser }       from '../../../firebase/firestore';
-import { storage }          from '../../../firebase/config';
+import { storage, db }      from '../../../firebase/config';
 import { logout }           from '../../../firebase/auth';
 import DistrictTalukPicker  from '../../common/components/DistrictTalukPicker';
 import { COLORS }           from '../../../constants/colors';
 import { rs, rf, H_PAD }    from '../../../utils/responsive';
 
-const { width: W } = Dimensions.get('window');
-const AVATAR_SIZE  = rs(100);
-const PHOTO_PATH   = (uid) => `profiles/${uid}/profile.jpg`;
+const AVATAR_SIZE = rs(100);
+const PHOTO_PATH  = (uid) => `profiles/${uid}/profile.jpg`;
+const SUPPORT_PHONE = '9876543210';
 
 export default function FarmerProfile({ navigation }) {
   const { setUser }                                  = useAuth();
@@ -35,15 +36,44 @@ export default function FarmerProfile({ navigation }) {
   const [village,      setVillage]      = useState(userProfile?.village  || '');
   const [saving,       setSaving]       = useState(false);
   const [editMode,     setEditMode]     = useState(false);
-  const [photoURL,     setPhotoURL]     = useState(
-    userProfile?.profilePhotoUrl || userProfile?.photoURL || null
-  );
+  const [photoURL,     setPhotoURL]     = useState(userProfile?.profilePhotoUrl || null);
   const [photoLoading, setPhotoLoading] = useState(false);
 
-  // ── Photo: upload / delete ─────────────────────────────────────────────
+  // Booking stats
+  const [stats, setStats] = useState({ total: 0, active: 0, completed: 0, cancelled: 0 });
+  const [recentBookings, setRecentBookings] = useState([]);
+
+  // Realtime profile + booking listener
+  useEffect(() => {
+    if (!uid) return;
+
+    // Profile listener
+    const unsubProfile = onSnapshot(doc(db, 'users', uid), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setPhotoURL(d.profilePhotoUrl || null);
+        updateProfile({ ...d, id: uid });
+      }
+    });
+
+    // Booking stats listener
+    const q = query(collection(db, 'bookings'), where('farmerId', '==', uid));
+    const unsubBookings = onSnapshot(q, (snap) => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const active    = all.filter(b => ['pending','accepted','ongoing'].includes(b.status)).length;
+      const completed = all.filter(b => b.status === 'completed').length;
+      const cancelled = all.filter(b => b.status === 'cancelled').length;
+      setStats({ total: all.length, active, completed, cancelled });
+      setRecentBookings(all.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0)).slice(0,3));
+    });
+
+    return () => { unsubProfile(); unsubBookings(); };
+  }, [uid]);
+
+  // Photo pick
   const handlePhotoPress = () => {
     const opts = [
-      { text: '📷 Camera',         onPress: () => pickPhoto('camera')  },
+      { text: '📷 Camera',              onPress: () => pickPhoto('camera')  },
       { text: '🖼️ Choose from Gallery', onPress: () => pickPhoto('gallery') },
     ];
     if (photoURL) opts.push({ text: '🗑️ Remove Photo', style: 'destructive', onPress: deletePhoto });
@@ -53,38 +83,34 @@ export default function FarmerProfile({ navigation }) {
 
   const pickPhoto = async (src) => {
     try {
-      const pickerOpts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1,1], quality: 0.75 };
+      const opts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1,1], quality: 0.75 };
       let result;
       if (src === 'camera') {
         const { granted } = await ImagePicker.requestCameraPermissionsAsync();
-        if (!granted) { Alert.alert('Permission needed', 'Allow camera access to take photo.'); return; }
-        result = await ImagePicker.launchCameraAsync(pickerOpts);
+        if (!granted) { Alert.alert('Permission needed'); return; }
+        result = await ImagePicker.launchCameraAsync(opts);
       } else {
         const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!granted) { Alert.alert('Permission needed', 'Allow gallery access to choose photo.'); return; }
-        result = await ImagePicker.launchImageLibraryAsync(pickerOpts);
+        if (!granted) { Alert.alert('Permission needed'); return; }
+        result = await ImagePicker.launchImageLibraryAsync(opts);
       }
       if (result.canceled || !result.assets?.[0]?.uri) return;
       setPhotoLoading(true);
       try {
-        const uri  = result.assets[0].uri;
-        const resp = await fetch(uri);
-        const blob = await resp.blob();
+        const blob = await (await fetch(result.assets[0].uri)).blob();
         const sRef = ref(storage, PHOTO_PATH(uid));
         await uploadBytes(sRef, blob, { contentType: 'image/jpeg' });
-        const url  = await getDownloadURL(sRef);
+        const url = await getDownloadURL(sRef);
         await updateUser(uid, { profilePhotoUrl: url });
         updateProfile({ profilePhotoUrl: url });
         setPhotoURL(url);
-        Alert.alert('✅ Photo Updated', 'Your profile photo has been updated.');
-      } catch {
-        Alert.alert('Upload Failed', 'Could not upload photo. Try again.');
-      } finally { setPhotoLoading(false); }
-    } catch (e) { setPhotoLoading(false); }
+      } catch { Alert.alert('Upload Failed', 'Try again.'); }
+      finally { setPhotoLoading(false); }
+    } catch { setPhotoLoading(false); }
   };
 
   const deletePhoto = () =>
-    Alert.alert('Remove Photo', 'Remove your profile photo?', [
+    Alert.alert('Remove Photo?', 'This will remove your profile photo.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => {
           setPhotoLoading(true);
@@ -99,25 +125,23 @@ export default function FarmerProfile({ navigation }) {
       },
     ]);
 
-  // ── Save profile ───────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!name.trim()) { Alert.alert('Required', 'Please enter your name'); return; }
-    if (!district)    { Alert.alert('Required', 'Please select your district'); return; }
-    if (!taluk)       { Alert.alert('Required', 'Please select your taluk'); return; }
+    if (!name.trim()) { Alert.alert('Required', 'Enter your name'); return; }
+    if (!district)    { Alert.alert('Required', 'Select district'); return; }
+    if (!taluk)       { Alert.alert('Required', 'Select taluk'); return; }
     setSaving(true);
     try {
-      const updates = { name: name.trim(), district, taluk, village: village.trim() };
-      await updateUser(uid, updates);
-      updateProfile(updates);
+      const u = { name: name.trim(), district, taluk, village: village.trim() };
+      await updateUser(uid, u);
+      updateProfile(u);
       setEditMode(false);
-      Alert.alert('✅ Saved', 'Your profile has been updated.');
-    } catch { Alert.alert('Error', 'Could not save. Try again.'); }
+      Alert.alert('✅ Saved', 'Profile updated!');
+    } catch { Alert.alert('Error', 'Could not save.'); }
     finally { setSaving(false); }
   };
 
-  // ── Logout ─────────────────────────────────────────────────────────────
   const handleLogout = () =>
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
+    Alert.alert('Logout', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Logout', style: 'destructive', onPress: async () => {
           await logout(); clearProfile(); setUser(null);
@@ -129,23 +153,23 @@ export default function FarmerProfile({ navigation }) {
   const initials = (userProfile?.name || 'F')[0].toUpperCase();
 
   const MENU = [
-    { icon: '📍', label: 'Set Location',    sub: `${userProfile?.taluk || '—'}, ${userProfile?.district || '—'}`,  onPress: () => navigation.navigate('LocationSelect') },
-    { icon: '📋', label: 'My Bookings',     sub: 'View all your bookings',          onPress: () => navigation.navigate('MyBookings') },
-    { icon: '⭐', label: 'Rate a Machine',  sub: 'Share your experience',           onPress: () => {} },
-    { icon: '🔔', label: 'Notifications',   sub: 'Booking alerts & updates',        onPress: () => {} },
-    { icon: '❓', label: 'Help & Support',  sub: 'FAQs and contact us',             onPress: () => {} },
-    { icon: '🛡️', label: 'Privacy Policy', sub: 'How we use your data',            onPress: () => {} },
+    { icon: '📋', label: 'My Bookings',    sub: `${stats.total} total bookings`,         onPress: () => navigation.navigate('MyBookings') },
+    { icon: '📍', label: 'Set Location',   sub: `${userProfile?.taluk || '—'}, ${userProfile?.district || '—'}`, onPress: () => navigation.navigate('LocationSelect') },
+    { icon: '🔔', label: 'Notifications',  sub: 'Booking alerts & updates',              onPress: () => {} },
+    { icon: '🛡️', label: 'Privacy Policy', sub: 'How we use your data',                  onPress: () => {} },
+    { icon: '📖', label: 'About App',      sub: 'நம்ம வயல் v1.0.4',                      onPress: () => {} },
   ];
+
+  const STATUS_COLOR = { pending:'#F59E0B', accepted:'#22C55E', ongoing:'#3B82F6', completed:'#1C7C54', cancelled:'#9CA3AF', rejected:'#EF4444' };
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <StatusBar barStyle="light-content" backgroundColor="#145A3E" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-          {/* ── HEADER ── */}
-          <LinearGradient colors={['#1C7C54', '#2E9E6B']} style={s.header}>
-            {/* Avatar */}
+          {/* HEADER */}
+          <LinearGradient colors={['#145A3E', '#1C7C54', '#2E9E6B']} style={s.header}>
             <TouchableOpacity style={s.avatarWrap} onPress={handlePhotoPress} activeOpacity={0.88}>
               {photoLoading ? (
                 <View style={s.avatar}><ActivityIndicator color="#fff" size="large" /></View>
@@ -154,97 +178,99 @@ export default function FarmerProfile({ navigation }) {
               ) : (
                 <View style={s.avatar}><Text style={s.avatarInitial}>{initials}</Text></View>
               )}
-              <View style={s.editPhotoBadge}>
-                <Text style={{ fontSize: rf(12) }}>✏️</Text>
-              </View>
+              <View style={s.editBadge}><Text style={{ fontSize: rf(13) }}>📷</Text></View>
             </TouchableOpacity>
             <Text style={s.headerName}>{userProfile?.name || 'Farmer'}</Text>
             <Text style={s.headerPhone}>+91 {userProfile?.phone || '—'}</Text>
-            <View style={s.headerBadge}>
-              <Text style={s.headerBadgeTxt}>👨‍🌾 Farmer</Text>
-            </View>
+            <View style={s.headerBadge}><Text style={s.headerBadgeTxt}>👨‍🌾 Farmer</Text></View>
+            <Text style={s.headerLocation}>📍 {userProfile?.taluk || '—'}, {userProfile?.district || 'Tamil Nadu'}</Text>
           </LinearGradient>
 
-          {/* ── STATS ── */}
+          {/* STATS ROW */}
           <View style={s.statsRow}>
             {[
-              { label: 'Bookings', value: '—', icon: '📋', color: '#3B82F6' },
-              { label: 'District', value: userProfile?.district || '—', icon: '🗺️', color: '#1C7C54' },
-              { label: 'Taluk',    value: userProfile?.taluk    || '—', icon: '📍', color: '#F59E0B' },
-            ].map((st, i) => (
-              <View key={st.label} style={[s.statItem, i < 2 && s.statBorder]}>
-                <Text style={[s.statValue, { color: st.color }]} numberOfLines={1}>{st.value}</Text>
-                <Text style={s.statLabel}>{st.icon} {st.label}</Text>
+              { label: 'Total',     value: stats.total,     color: '#3B82F6' },
+              { label: 'Active',    value: stats.active,    color: '#22C55E' },
+              { label: 'Done',      value: stats.completed, color: '#1C7C54' },
+              { label: 'Cancelled', value: stats.cancelled, color: '#EF4444' },
+            ].map((st, i, arr) => (
+              <View key={st.label} style={[s.statItem, i < arr.length-1 && s.statBorder]}>
+                <Text style={[s.statValue, { color: st.color }]}>{st.value}</Text>
+                <Text style={s.statLabel}>{st.label}</Text>
               </View>
             ))}
           </View>
 
-          {/* ── EDIT PROFILE BUTTON ── */}
-          <TouchableOpacity
-            style={[s.editProfileBtn, editMode && s.editProfileBtnActive]}
-            onPress={() => setEditMode(e => !e)}
-            activeOpacity={0.85}
-          >
-            <Text style={[s.editProfileBtnTxt, editMode && { color: '#EF4444' }]}>
-              {editMode ? '✕  Cancel Editing' : '✏️  Edit Profile'}
-            </Text>
+          {/* EDIT BUTTON */}
+          <TouchableOpacity style={[s.editBtn, editMode && s.editBtnActive]} onPress={() => setEditMode(e=>!e)} activeOpacity={0.85}>
+            <Text style={[s.editBtnTxt, editMode && { color: '#EF4444' }]}>{editMode ? '✕  Cancel' : '✏️  Edit Profile'}</Text>
           </TouchableOpacity>
 
-          {/* ── EDIT FORM ── */}
+          {/* EDIT FORM */}
           {editMode && (
-            <View style={s.editSection}>
-              <Text style={s.sectionTitle}>Personal Information</Text>
+            <View style={s.editCard}>
+              <Text style={s.cardTitle}>Edit Profile</Text>
               <View style={s.inputGroup}>
                 <Text style={s.inputLabel}>Full Name</Text>
-                <TextInput
-                  style={s.input}
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="Your full name"
-                  placeholderTextColor="#9CA3AF"
-                />
+                <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Your name" placeholderTextColor="#9CA3AF" />
               </View>
-              <DistrictTalukPicker
-                district={district} taluk={taluk}
-                onDistrictChange={setDistrict} onTalukChange={setTaluk}
-              />
+              <DistrictTalukPicker district={district} taluk={taluk} onDistrictChange={setDistrict} onTalukChange={setTaluk} />
               <View style={s.inputGroup}>
-                <Text style={s.inputLabel}>Village <Text style={s.optional}>(optional)</Text></Text>
-                <TextInput
-                  style={s.input}
-                  value={village}
-                  onChangeText={setVillage}
-                  placeholder="Your village name"
-                  placeholderTextColor="#9CA3AF"
-                />
+                <Text style={s.inputLabel}>Village (optional)</Text>
+                <TextInput style={s.input} value={village} onChangeText={setVillage} placeholder="Your village" placeholderTextColor="#9CA3AF" />
               </View>
-              <TouchableOpacity
-                style={[s.saveBtn, saving && { opacity: 0.7 }]}
-                onPress={handleSave}
-                disabled={saving}
-                activeOpacity={0.88}
-              >
-                {saving
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={s.saveBtnTxt}>Save Changes</Text>
-                }
+              <TouchableOpacity style={[s.saveBtn, saving && { opacity: 0.7 }]} onPress={handleSave} disabled={saving} activeOpacity={0.88}>
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveBtnTxt}>Save Changes</Text>}
               </TouchableOpacity>
             </View>
           )}
 
-          {/* ── MENU ── */}
-          <Text style={s.sectionTitle} style={{ paddingHorizontal: H_PAD, marginTop: rs(20), marginBottom: rs(8), fontSize: rf(13), fontWeight: '700', color: '#6B7280' }}>ACCOUNT</Text>
+          {/* RECENT BOOKINGS */}
+          {recentBookings.length > 0 && (
+            <View style={s.section}>
+              <View style={s.sectionHeaderRow}>
+                <Text style={s.sectionTitle}>Recent Bookings</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('MyBookings')} activeOpacity={0.7}>
+                  <Text style={s.seeAll}>See all →</Text>
+                </TouchableOpacity>
+              </View>
+              {recentBookings.map(b => (
+                <View key={b.id} style={s.bookingCard}>
+                  <View style={s.bookingLeft}>
+                    <Text style={s.bookingMachine}>🚜 {b.machineTypeLabel || b.machineType || '—'}</Text>
+                    <Text style={s.bookingDate}>📅 {b.date} · {b.timeSlot}</Text>
+                  </View>
+                  <View style={[s.bookingStatus, { backgroundColor: STATUS_COLOR[b.status]+'22' }]}>
+                    <Text style={[s.bookingStatusTxt, { color: STATUS_COLOR[b.status] }]}>
+                      {b.status?.toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* SUPPORT */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Support</Text>
+            <View style={s.supportRow}>
+              <TouchableOpacity style={s.supportBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)} activeOpacity={0.85}>
+                <Text style={s.supportIcon}>📞</Text>
+                <Text style={s.supportTxt}>Call Support</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.supportBtn, { borderColor: '#25D366' }]} onPress={() => Linking.openURL(`whatsapp://send?phone=91${SUPPORT_PHONE}`)} activeOpacity={0.85}>
+                <Text style={s.supportIcon}>💬</Text>
+                <Text style={[s.supportTxt, { color: '#25D366' }]}>WhatsApp</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* MENU */}
+          <Text style={s.menuSectionTxt}>ACCOUNT</Text>
           <View style={s.menuCard}>
             {MENU.map((item, i) => (
-              <TouchableOpacity
-                key={item.label}
-                style={[s.menuRow, i < MENU.length - 1 && s.menuRowBorder]}
-                onPress={item.onPress}
-                activeOpacity={0.7}
-              >
-                <View style={s.menuIconWrap}>
-                  <Text style={s.menuIcon}>{item.icon}</Text>
-                </View>
+              <TouchableOpacity key={item.label} style={[s.menuRow, i < MENU.length-1 && s.menuRowBorder]} onPress={item.onPress} activeOpacity={0.7}>
+                <View style={s.menuIconWrap}><Text style={s.menuIcon}>{item.icon}</Text></View>
                 <View style={s.menuBody}>
                   <Text style={s.menuLabel}>{item.label}</Text>
                   <Text style={s.menuSub} numberOfLines={1}>{item.sub}</Text>
@@ -254,15 +280,12 @@ export default function FarmerProfile({ navigation }) {
             ))}
           </View>
 
-          {/* ── LOGOUT ── */}
+          {/* LOGOUT */}
           <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
-            <Text style={s.logoutIcon}>⏻</Text>
-            <Text style={s.logoutTxt}>Logout</Text>
+            <Text style={s.logoutTxt}>⏻  Logout</Text>
           </TouchableOpacity>
 
-          {/* App version */}
           <Text style={s.version}>நம்ம வயல் 🌾  v1.0.4</Text>
-
           <View style={{ height: rs(40) }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -271,56 +294,58 @@ export default function FarmerProfile({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  safe:              { flex: 1, backgroundColor: '#F4F5F7' },
-  scroll:            { flexGrow: 1, paddingBottom: rs(20) },
-
-  // Header
-  header:            { paddingTop: rs(32), paddingBottom: rs(28), alignItems: 'center' },
-  avatarWrap:        { position: 'relative', marginBottom: rs(14) },
-  avatar:            { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.6)' },
-  avatarImg:         { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2, borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.6)' },
-  avatarInitial:     { fontSize: rf(42), fontWeight: '900', color: '#fff' },
-  editPhotoBadge:    { position: 'absolute', bottom: rs(0), right: rs(0), width: rs(30), height: rs(30), borderRadius: rs(15), backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', elevation: 4, borderWidth: rs(2), borderColor: '#E5E7EB' },
-  headerName:        { fontSize: rf(22), fontWeight: '900', color: '#fff', marginBottom: rs(4) },
-  headerPhone:       { fontSize: rf(14), color: 'rgba(255,255,255,0.8)', marginBottom: rs(10) },
-  headerBadge:       { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: rs(20), paddingHorizontal: rs(14), paddingVertical: rs(5) },
-  headerBadgeTxt:    { fontSize: rf(12), color: '#fff', fontWeight: '700' },
-
-  // Stats
-  statsRow:          { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: rs(16), marginTop: -rs(16), borderRadius: rs(16), elevation: 4, overflow: 'hidden', marginBottom: rs(12) },
-  statItem:          { flex: 1, alignItems: 'center', paddingVertical: rs(14) },
-  statBorder:        { borderRightWidth: 1, borderRightColor: '#F0F0F0' },
-  statValue:         { fontSize: rf(14), fontWeight: '800', marginBottom: rs(4) },
-  statLabel:         { fontSize: rf(10), color: '#9CA3AF' },
-
-  // Edit profile button
-  editProfileBtn:    { marginHorizontal: rs(16), marginBottom: rs(4), backgroundColor: '#fff', borderRadius: rs(12), paddingVertical: rs(13), alignItems: 'center', borderWidth: rs(1.5), borderColor: COLORS.primary, elevation: 1 },
-  editProfileBtnActive: { borderColor: '#EF4444' },
-  editProfileBtnTxt: { fontSize: rf(14), fontWeight: '700', color: COLORS.primary },
-
-  // Edit form
-  editSection:       { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), padding: rs(16), marginBottom: rs(12), elevation: 1 },
-  sectionTitle:      { fontSize: rf(13), fontWeight: '700', color: '#6B7280', marginBottom: rs(12) },
-  inputGroup:        { marginBottom: rs(14) },
-  inputLabel:        { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: rs(6) },
-  optional:          { fontWeight: '400', color: '#9CA3AF' },
-  input:             { backgroundColor: '#F9FAFB', borderWidth: rs(1.5), borderColor: '#E5E7EB', borderRadius: rs(12), paddingVertical: rs(12), paddingHorizontal: rs(14), fontSize: rf(14), color: '#111827' },
-  saveBtn:           { backgroundColor: COLORS.primary, borderRadius: rs(12), paddingVertical: rs(14), alignItems: 'center', marginTop: rs(4) },
-  saveBtnTxt:        { color: '#fff', fontSize: rf(15), fontWeight: '800' },
-
-  // Menu
-  menuCard:          { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), overflow: 'hidden', elevation: 1, marginBottom: rs(12), marginTop: rs(6) },
-  menuRow:           { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(16), paddingVertical: rs(14) },
-  menuRowBorder:     { borderBottomWidth: 1, borderBottomColor: '#F4F5F7' },
-  menuIconWrap:      { width: rs(38), height: rs(38), borderRadius: rs(10), backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
-  menuIcon:          { fontSize: rf(18) },
-  menuBody:          { flex: 1 },
-  menuLabel:         { fontSize: rf(14), fontWeight: '600', color: '#111827', marginBottom: rs(2) },
-  menuSub:           { fontSize: rf(11), color: '#9CA3AF' },
-
-  // Logout
-  logoutBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(8), marginHorizontal: rs(16), backgroundColor: '#FEF2F2', borderRadius: rs(14), paddingVertical: rs(15), marginBottom: rs(8) },
-  logoutIcon:        { fontSize: rf(18), color: '#EF4444' },
-  logoutTxt:         { fontSize: rf(15), fontWeight: '800', color: '#EF4444' },
-  version:           { textAlign: 'center', fontSize: rf(11), color: '#9CA3AF' },
+  safe:            { flex: 1, backgroundColor: '#F4F5F7' },
+  scroll:          { flexGrow: 1, paddingBottom: rs(20) },
+  header:          { paddingTop: rs(36), paddingBottom: rs(28), alignItems: 'center', paddingHorizontal: H_PAD },
+  avatarWrap:      { position: 'relative', marginBottom: rs(12) },
+  avatar:          { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE/2, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.6)' },
+  avatarImg:       { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE/2, borderWidth: rs(3), borderColor: 'rgba(255,255,255,0.6)' },
+  avatarInitial:   { fontSize: rf(42), fontWeight: '900', color: '#fff' },
+  editBadge:       { position: 'absolute', bottom: 0, right: 0, width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', elevation: 4 },
+  headerName:      { fontSize: rf(22), fontWeight: '900', color: '#fff', marginBottom: rs(3) },
+  headerPhone:     { fontSize: rf(13), color: 'rgba(255,255,255,0.8)', marginBottom: rs(8) },
+  headerBadge:     { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: rs(20), paddingHorizontal: rs(14), paddingVertical: rs(5), marginBottom: rs(6) },
+  headerBadgeTxt:  { fontSize: rf(12), color: '#fff', fontWeight: '700' },
+  headerLocation:  { fontSize: rf(12), color: 'rgba(255,255,255,0.7)' },
+  statsRow:        { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: rs(16), marginTop: -rs(14), borderRadius: rs(16), elevation: 4, overflow: 'hidden', marginBottom: rs(12) },
+  statItem:        { flex: 1, alignItems: 'center', paddingVertical: rs(14) },
+  statBorder:      { borderRightWidth: 1, borderRightColor: '#F0F0F0' },
+  statValue:       { fontSize: rf(18), fontWeight: '900', marginBottom: rs(3) },
+  statLabel:       { fontSize: rf(10), color: '#9CA3AF' },
+  editBtn:         { marginHorizontal: rs(16), marginBottom: rs(8), backgroundColor: '#fff', borderRadius: rs(12), paddingVertical: rs(13), alignItems: 'center', borderWidth: rs(1.5), borderColor: COLORS.primary },
+  editBtnActive:   { borderColor: '#EF4444' },
+  editBtnTxt:      { fontSize: rf(14), fontWeight: '700', color: COLORS.primary },
+  editCard:        { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), padding: rs(16), marginBottom: rs(12) },
+  cardTitle:       { fontSize: rf(14), fontWeight: '700', color: '#374151', marginBottom: rs(14) },
+  inputGroup:      { marginBottom: rs(12) },
+  inputLabel:      { fontSize: rf(13), fontWeight: '600', color: '#374151', marginBottom: rs(6) },
+  input:           { backgroundColor: '#F9FAFB', borderWidth: rs(1.5), borderColor: '#E5E7EB', borderRadius: rs(12), paddingVertical: rs(12), paddingHorizontal: rs(14), fontSize: rf(14), color: '#111827' },
+  saveBtn:         { backgroundColor: COLORS.primary, borderRadius: rs(12), paddingVertical: rs(14), alignItems: 'center' },
+  saveBtnTxt:      { color: '#fff', fontSize: rf(15), fontWeight: '800' },
+  section:         { paddingHorizontal: rs(16), marginBottom: rs(16) },
+  sectionHeaderRow:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: rs(10) },
+  sectionTitle:    { fontSize: rf(14), fontWeight: '700', color: '#374151' },
+  seeAll:          { fontSize: rf(13), color: COLORS.primary, fontWeight: '600' },
+  bookingCard:     { backgroundColor: '#fff', borderRadius: rs(12), padding: rs(14), marginBottom: rs(8), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 1 },
+  bookingLeft:     { flex: 1 },
+  bookingMachine:  { fontSize: rf(13), fontWeight: '700', color: '#111827', marginBottom: rs(3) },
+  bookingDate:     { fontSize: rf(12), color: '#9CA3AF' },
+  bookingStatus:   { borderRadius: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(5) },
+  bookingStatusTxt:{ fontSize: rf(11), fontWeight: '800' },
+  supportRow:      { flexDirection: 'row', gap: rs(10) },
+  supportBtn:      { flex: 1, backgroundColor: '#fff', borderRadius: rs(12), paddingVertical: rs(14), alignItems: 'center', borderWidth: rs(1.5), borderColor: COLORS.primary, elevation: 1 },
+  supportIcon:     { fontSize: rf(22), marginBottom: rs(4) },
+  supportTxt:      { fontSize: rf(13), fontWeight: '700', color: COLORS.primary },
+  menuSectionTxt:  { paddingHorizontal: H_PAD, marginBottom: rs(8), fontSize: rf(12), fontWeight: '700', color: '#9CA3AF' },
+  menuCard:        { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), overflow: 'hidden', elevation: 1, marginBottom: rs(12) },
+  menuRow:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(16), paddingVertical: rs(14) },
+  menuRowBorder:   { borderBottomWidth: 1, borderBottomColor: '#F4F5F7' },
+  menuIconWrap:    { width: rs(38), height: rs(38), borderRadius: rs(10), backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
+  menuIcon:        { fontSize: rf(18) },
+  menuBody:        { flex: 1 },
+  menuLabel:       { fontSize: rf(14), fontWeight: '600', color: '#111827', marginBottom: rs(2) },
+  menuSub:         { fontSize: rf(11), color: '#9CA3AF' },
+  logoutBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: rs(16), backgroundColor: '#FEF2F2', borderRadius: rs(14), paddingVertical: rs(15), marginBottom: rs(8) },
+  logoutTxt:       { fontSize: rf(15), fontWeight: '800', color: '#EF4444' },
+  version:         { textAlign: 'center', fontSize: rf(11), color: '#9CA3AF' },
 });

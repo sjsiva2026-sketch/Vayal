@@ -116,8 +116,9 @@ export default function PayCommission({ navigation }) {
   const openUpi = async (app) => {
     setSelectedUpi(app.id);
     const amount = lockState?.commissionAmount || 0;
-    const upiUrl = `upi://pay?pa=${CONFIG.VAYAL_UPI_ID}&pn=${encodeURIComponent(CONFIG.VAYAL_UPI_NAME)}&am=${amount}&cu=INR&tn=VayalCommission`;
-    const appUrl = `${app.scheme}?pa=${CONFIG.VAYAL_UPI_ID}&pn=${encodeURIComponent(CONFIG.VAYAL_UPI_NAME)}&am=${amount}&cu=INR&tn=VayalCommission`;
+    const receiverName = encodeURIComponent(CONFIG.VAYAL_UPI_NAME || 'NAMMA VAYAL AGRI SERVICES');
+    const upiUrl = `upi://pay?pa=${CONFIG.VAYAL_UPI_ID}&pn=${receiverName}&am=${amount}&cu=INR&tn=NammaVayal+Commission`;
+    const appUrl = `${app.scheme}?pa=${CONFIG.VAYAL_UPI_ID}&pn=${receiverName}&am=${amount}&cu=INR&tn=NammaVayal+Commission`;
     try {
       if (await Linking.canOpenURL(appUrl)) { await Linking.openURL(appUrl); return; }
       if (await Linking.canOpenURL(upiUrl)) { await Linking.openURL(upiUrl); return; }
