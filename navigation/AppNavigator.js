@@ -38,6 +38,7 @@ import OwnerProfile              from '../src/owner/screens/OwnerProfile';
 import EditMachine               from '../src/owner/screens/EditMachine';
 import KycScreen                 from '../src/owner/screens/KycScreen';
 import AdminLoginScreen          from '../src/admin/screens/AdminLoginScreen';
+import AdminNavigator            from './AdminNavigator';
 import AdminDashboard            from '../src/admin/screens/AdminDashboard';
 import UsersList                 from '../src/admin/screens/UsersList';
 import MachinesList              from '../src/admin/screens/MachinesList';
@@ -220,7 +221,7 @@ export default function AppNavigator() {
         <Stack.Screen name="EditMachine"    component={EditMachine}       options={{ title: 'Edit Machine' }} />
 
         <Stack.Screen name="AdminLogin"          component={AdminLoginScreen}    options={{ headerShown: false }} />
-        <Stack.Screen name="AdminDashboard"      component={AdminDashboard}      options={{ headerShown: false }} />
+        <Stack.Screen name="AdminDashboard"      component={AdminNavigator}      options={{ headerShown: false }} />
         <Stack.Screen name="UsersList"           component={UsersList}           options={{ title: 'Users' }} />
         <Stack.Screen name="MachinesList"        component={MachinesList}        options={{ title: 'Machines' }} />
         <Stack.Screen name="PaymentsList"        component={PaymentsList}        options={{ title: 'Commission Payments' }} />

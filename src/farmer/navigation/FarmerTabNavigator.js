@@ -5,7 +5,7 @@ import {
   Platform, StatusBar,
 } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { FIcon, MCIcon }  from '../../../utils/icons';
+import { FIcon, MCIcon, IIcon }  from '../../../utils/icons';
 import { COLORS }         from '../../../constants/colors';
 import { rs, rf, BOTTOM_NAV_H } from '../../../utils/responsive';
 
@@ -18,10 +18,10 @@ const Tab     = createBottomTabNavigator();
 const PRIMARY = COLORS.primary;
 
 const TABS = [
-  { name: 'Home',        label: 'Home',        renderIcon: (c) => <FIcon  name="home"      size={rs(22)} color={c} fallback="🏠" /> },
-  { name: 'FindMachine', label: 'Find Machine', renderIcon: (c) => <MCIcon name="tractor"   size={rs(22)} color={c} fallback="🚜" /> },
-  { name: 'MyBookings',  label: 'Bookings',     renderIcon: (c) => <FIcon  name="clipboard" size={rs(22)} color={c} fallback="📋" /> },
-  { name: 'Profile',     label: 'Profile',      renderIcon: (c) => <FIcon  name="user"      size={rs(22)} color={c} fallback="👤" /> },
+  { name: 'Home',        label: 'Home',        renderIcon: (c) => <FIcon  name="home"           size={rs(22)} color={c} fallback="🏠" /> },
+  { name: 'FindMachine', label: 'Find Machine', renderIcon: (c) => <MCIcon name="tractor"        size={rs(22)} color={c} fallback="🚜" /> },
+  { name: 'MyBookings',  label: 'Bookings',     renderIcon: (c) => <IIcon  name="list-outline"   size={rs(22)} color={c} fallback="📋" /> },
+  { name: 'Profile',     label: 'Profile',      renderIcon: (c) => <IIcon  name="person-circle-outline" size={rs(24)} color={c} fallback="👤" /> },
 ];
 
 function CustomTabBar({ state, navigation }) {

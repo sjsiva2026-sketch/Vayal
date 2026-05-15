@@ -11,7 +11,7 @@ import { LinearGradient }   from 'expo-linear-gradient';
 import * as ImagePicker     from 'expo-image-picker';
 import { onSnapshot, doc, collection, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { FIcon }            from '../../../utils/icons';
+import { IIcon, FIcon }          from '../../../utils/icons';
 import { useAuth }          from '../../../context/AuthContext';
 import { useUser }          from '../../../context/UserContext';
 import { updateUser }       from '../../../firebase/firestore';

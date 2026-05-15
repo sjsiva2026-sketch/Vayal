@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView,
-  ScrollView, TouchableOpacity, StatusBar, Image,
+  ScrollView, TouchableOpacity, StatusBar,
 } from 'react-native';
 import { FIcon, IIcon }           from '../../../utils/icons';
 import { useUser }                from '../../../context/UserContext';
@@ -56,19 +56,6 @@ export default function FarmerHome({ navigation }) {
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={s.avatarBtn}
-            onPress={() => navigation.navigate('Profile')}
-            activeOpacity={0.85}
-          >
-            {userProfile?.photoURL ? (
-              <Image source={{ uri: userProfile.photoURL }} style={s.avatarImg} />
-            ) : (
-              <View style={s.avatarFallback}>
-                <Text style={s.avatarTxt}>{(userProfile?.name || 'F')[0].toUpperCase()}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
         </View>
 
         {/* Search bar */}
@@ -151,10 +138,10 @@ const s = StyleSheet.create({
   locRow:           { flexDirection: 'row', alignItems: 'center', marginTop: rs(4) },
   locTxt:           { fontSize: rf(13), color: '#6B7280', marginLeft: rs(3), flex: 1 },
 
-  avatarBtn:        { marginLeft: rs(12) },
-  avatarImg:        { width: rs(42), height: rs(42), borderRadius: rs(21), borderWidth: rs(2), borderColor: COLORS.primary },
-  avatarFallback:   { width: rs(42), height: rs(42), borderRadius: rs(21), backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarTxt:        { fontSize: rf(18), fontWeight: '900', color: '#fff' },
+  avatarBtn:        {},
+  avatarImg:        {},
+  avatarFallback:   {},
+  avatarTxt:        {},
 
   searchBar:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F5F7', borderRadius: rs(14), paddingHorizontal: rs(16), paddingVertical: rs(13), marginHorizontal: H_PAD, marginBottom: rs(20) },
   searchPlaceholder:{ fontSize: rf(15), color: '#9CA3AF', flex: 1 },
