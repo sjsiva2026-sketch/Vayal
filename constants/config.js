@@ -10,7 +10,7 @@ export const CONFIG = {
   APP_NAME_TAMIL: 'நம்ம வயல்',
 
   // UPI — linked to your current account
-  VAYAL_UPI_ID:   'sjguna2005@okhdfcbank',
+  VAYAL_UPI_ID:   '8291067101@indianbk',
   VAYAL_UPI_NAME: 'NAMMA VAYAL AGRI SERVICES',
 
   BOOKING_STATUSES: {

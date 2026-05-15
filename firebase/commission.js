@@ -11,7 +11,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
 
 export const COMMISSION_RATE = 20;
-export const LOCK_WINDOW_MS  = 5 * 60 * 1000; // 5 minutes (testing) → change to 24*60*60*1000 for production
+export const LOCK_WINDOW_MS  = 24 * 60 * 60 * 1000; // 24 hours (production)
 
 // ── Convert ANY timestamp format to milliseconds ───────────────────────────
 // Handles: Firestore Timestamp, ISO string, Date object, number
@@ -45,13 +45,7 @@ export function computeLockState(userDoc) {
   const msRemaining = expiryTime - currentTime;
   const shouldLock  = currentTime > expiryTime;
 
-  // Debug logs (remove in production)
-  console.log('[Commission] Current Time:', new Date(currentTime).toISOString());
-  console.log('[Commission] OTP Time:    ', new Date(verifiedMs).toISOString());
-  console.log('[Commission] Expiry Time: ', new Date(expiryTime).toISOString());
-  console.log('[Commission] Payment:     ', paymentStatus);
-  console.log('[Commission] isLocked:    ', shouldLock);
-  console.log('[Commission] Remaining:   ', Math.round(msRemaining / 1000), 'seconds');
+  // Lock check
 
   return {
     shouldLock,
