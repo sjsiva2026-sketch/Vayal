@@ -79,7 +79,7 @@ export default function AdminLoginScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="height"
       >
         <ScrollView
           contentContainerStyle={s.scroll}

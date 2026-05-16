@@ -108,7 +108,7 @@ export default function WorkComplete({ navigation, route }) {
     <SafeAreaView style={s.safe}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="height"
       >
         <ScrollView
           contentContainerStyle={s.scroll}

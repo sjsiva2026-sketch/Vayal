@@ -1,176 +1,188 @@
-import { StyleSheet, Platform } from 'react-native';
+// src/common/styles/globalStyles.js
+// ANDROID-ONLY global styles
+// All screens use these as base — no iOS-specific overrides
+
+import { StyleSheet, Platform, StatusBar, Dimensions } from 'react-native';
+import { rs, rf, H_PAD, STATUS_BAR_H, BOTTOM_NAV_H } from '../../../utils/responsive';
 import { COLORS } from '../../../constants/colors';
 
-export const globalStyles = StyleSheet.create({
-  // ── Layout ─────────────────────────────────────────
-  container: {
-    flex: 1,
+const { width: W, height: H } = Dimensions.get('window');
+
+export const G = StyleSheet.create({
+  // ── Safe containers ─────────────────────────────────────────────────────
+  safe: {
+    flex:            1,
     backgroundColor: COLORS.background,
   },
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  spaceBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  safeWhite: {
+    flex:            1,
+    backgroundColor: '#fff',
   },
 
-  // ── Cards ──────────────────────────────────────────
+  // ── Screen root ──────────────────────────────────────────────────────────
+  // Use this as the outermost View inside SafeAreaView
+  screen: {
+    flex:       1,
+    paddingTop: STATUS_BAR_H, // Android status bar fix
+  },
+
+  // ── Scroll containers ────────────────────────────────────────────────────
+  scroll: {
+    flexGrow:      1,
+    paddingBottom: rs(40),
+    paddingHorizontal: H_PAD,
+  },
+  scrollNoPad: {
+    flexGrow:      1,
+    paddingBottom: rs(40),
+  },
+
+  // ── Cards ─────────────────────────────────────────────────────────────────
   card: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 2 },
-      },
-      android: { elevation: 3 },
-    }),
+    backgroundColor: '#fff',
+    borderRadius:    rs(16),
+    padding:         rs(16),
+    elevation:       2,
+    marginBottom:    rs(12),
+    borderWidth:     1,
+    borderColor:     '#F0F0F0',
+  },
+  cardFlat: {
+    backgroundColor: '#fff',
+    borderRadius:    rs(16),
+    padding:         rs(16),
+    marginBottom:    rs(12),
   },
 
-  // ── Buttons ────────────────────────────────────────
-  primaryButton: {
+  // ── Rows ──────────────────────────────────────────────────────────────────
+  row:       { flexDirection: 'row', alignItems: 'center' },
+  rowBetween:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+
+  // ── Buttons ───────────────────────────────────────────────────────────────
+  btnPrimary: {
     backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginVertical: 6,
+    borderRadius:    rs(14),
+    paddingVertical: rs(15),
+    alignItems:      'center',
   },
-  primaryButtonText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginVertical: 6,
-  },
-  dangerButton: {
-    backgroundColor: COLORS.error,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginVertical: 6,
-  },
-
-  // ── Typography ─────────────────────────────────────
-  heading: {
-    fontSize: 22,
+  btnPrimaryTxt: {
+    color:      '#fff',
+    fontSize:   rf(15),
     fontWeight: '800',
-    color: COLORS.textPrimary,
   },
-  subheading: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
+  btnOutline: {
+    borderRadius:    rs(14),
+    paddingVertical: rs(15),
+    alignItems:      'center',
+    borderWidth:     rs(1.5),
+    borderColor:     COLORS.primary,
+    backgroundColor: '#fff',
   },
-  body: {
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    lineHeight: 20,
-  },
-  caption: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  sectionTitle: {
-    fontSize: 16,
+  btnOutlineTxt: {
+    color:      COLORS.primary,
+    fontSize:   rf(15),
     fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 8,
+  },
+  btnDanger: {
+    backgroundColor: '#EF4444',
+    borderRadius:    rs(14),
+    paddingVertical: rs(15),
+    alignItems:      'center',
+  },
+  btnDangerTxt: {
+    color:      '#fff',
+    fontSize:   rf(15),
+    fontWeight: '800',
   },
 
-  // ── Inputs ─────────────────────────────────────────
+  // ── Typography ────────────────────────────────────────────────────────────
+  h1: { fontSize: rf(24), fontWeight: '900', color: COLORS.textPrimary },
+  h2: { fontSize: rf(20), fontWeight: '800', color: COLORS.textPrimary },
+  h3: { fontSize: rf(17), fontWeight: '700', color: COLORS.textPrimary },
+  body: { fontSize: rf(14), color: COLORS.textPrimary, lineHeight: rf(21) },
+  bodySmall: { fontSize: rf(12), color: COLORS.textSecondary, lineHeight: rf(18) },
+  caption: { fontSize: rf(11), color: COLORS.textSecondary },
+  label: { fontSize: rf(13), fontWeight: '700', color: COLORS.textSecondary, marginBottom: rs(6) },
+
+  // ── Inputs ────────────────────────────────────────────────────────────────
   input: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    color: COLORS.textPrimary,
-    marginBottom: 14,
+    backgroundColor:  '#F9FAFB',
+    borderWidth:      rs(1.5),
+    borderColor:      '#E5E7EB',
+    borderRadius:     rs(12),
+    paddingVertical:  rs(13),
+    paddingHorizontal:rs(14),
+    fontSize:         rf(14),
+    color:            '#111827',
+  },
+  inputFocused: {
+    borderColor:     COLORS.primary,
+    backgroundColor: '#FAFFFE',
   },
 
-  // ── Badges / Tags ──────────────────────────────────
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
+  // ── Section headers ───────────────────────────────────────────────────────
+  sectionTitle: {
+    fontSize:        rf(16),
+    fontWeight:      '800',
+    color:           '#111827',
+    marginBottom:    rs(12),
   },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.white,
+  sectionLabel: {
+    fontSize:     rf(12),
+    fontWeight:   '700',
+    color:        '#9CA3AF',
+    marginBottom: rs(8),
+    letterSpacing: 0.5,
   },
 
-  // ── Divider ────────────────────────────────────────
+  // ── Empty states ──────────────────────────────────────────────────────────
+  emptyContainer: {
+    flex:           1,
+    alignItems:     'center',
+    justifyContent: 'center',
+    padding:        H_PAD * 2,
+  },
+  emptyIcon:  { fontSize: rf(48), marginBottom: rs(12) },
+  emptyTitle: { fontSize: rf(18), fontWeight: '700', color: '#111827', textAlign: 'center' },
+  emptySub:   { fontSize: rf(13), color: '#6B7280', textAlign: 'center', marginTop: rs(8) },
+
+  // ── Android-specific ─────────────────────────────────────────────────────
+  // Add this paddingTop to views that need Android status bar spacing
+  androidTop:  { paddingTop: STATUS_BAR_H },
+  // Add this paddingBottom to views above bottom nav
+  androidBottom:{ paddingBottom: BOTTOM_NAV_H },
+
+  // ── Images ────────────────────────────────────────────────────────────────
+  // Responsive images — no stretching on any Android ratio
+  imgResponsive: {
+    width:       '100%',
+    height:      undefined,
+    aspectRatio: 1.5,
+    resizeMode:  'contain',
+  },
+  imgSquare: {
+    width:       '100%',
+    height:      undefined,
+    aspectRatio: 1,
+    resizeMode:  'cover',
+  },
+  imgPortrait: {
+    width:       '100%',
+    height:      undefined,
+    aspectRatio: 0.75,
+    resizeMode:  'contain',
+  },
+
+  // ── Separators ───────────────────────────────────────────────────────────
   divider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 12,
+    height:          1,
+    backgroundColor: '#F0F0F0',
   },
 
-  // ── Error ──────────────────────────────────────────
-  errorText: {
-    color: COLORS.error,
-    fontSize: 13,
-    marginTop: 4,
-  },
-
-  // ── Info boxes ─────────────────────────────────────
-  infoBox: {
-    backgroundColor: '#FFF9E6',
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.secondary,
-    marginVertical: 8,
-  },
-  successBox: {
-    backgroundColor: '#E8FAF0',
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.success,
-    marginVertical: 8,
-  },
-  warningBox: {
-    backgroundColor: '#FFF3CD',
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.warning,
-    marginVertical: 8,
-  },
-  errorBox: {
-    backgroundColor: '#FEE2E2',
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.error,
-    marginVertical: 8,
-  },
+  // ── Shadows (Android elevation) ───────────────────────────────────────────
+  shadow1: { elevation: 1 },
+  shadow2: { elevation: 2 },
+  shadow3: { elevation: 3 },
+  shadow4: { elevation: 4 },
+  shadow6: { elevation: 6 },
 });

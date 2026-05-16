@@ -70,7 +70,7 @@ export default function OwnerDashboard({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
 
-        {/* ── Header: Hello + avatar (screenshot reference) ── */}
+        {/* ── Header ── */}
         <View style={s.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={s.greetTxt}>Hello! 👋</Text>
@@ -81,12 +81,6 @@ export default function OwnerDashboard({ navigation }) {
               </Text>
             </View>
           </View>
-          <TouchableOpacity style={s.avatarBtn} onPress={() => navigation.navigate('OwnerProfile')} activeOpacity={0.85}>
-            {userProfile?.photoURL
-              ? <Image source={{ uri: userProfile.photoURL }} style={s.avatarImg} />
-              : <View style={s.avatarFallback}><FIcon name="user" size={20} color={PRIMARY} fallback="👤" /></View>
-            }
-          </TouchableOpacity>
         </View>
 
         {/* Lock banner */}

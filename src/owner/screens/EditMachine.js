@@ -31,7 +31,7 @@ export default function EditMachine({ navigation, route }) {
 
   return (
     <SafeAreaView style={s.safe}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="height">
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <Text style={s.title}>✏️ Edit Machine</Text>
           <View style={s.tag}><Text style={s.tagText}>{machine.type}</Text></View>

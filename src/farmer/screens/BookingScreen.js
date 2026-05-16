@@ -81,7 +81,7 @@ export default function BookingScreen({ navigation, route }) {
   return (
     <SafeAreaView style={s.safe}>
       {/* KAV: keyboard safe on all Android sizes */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="height">
         <ScrollView
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}

@@ -1,22 +1,6 @@
 // src/common/components/ScreenWrapper.js
-// ─────────────────────────────────────────────────────────────────────────────
-// Reusable screen wrapper — handles ALL Android screen ratios
-//
-// Usage:
-//   <ScreenWrapper>
-//     <YourContent />
-//   </ScreenWrapper>
-//
-//   <ScreenWrapper scroll keyboard>
-//     <FormContent />
-//   </ScreenWrapper>
-//
-// Props:
-//   scroll   → wraps children in ScrollView
-//   keyboard → adds KeyboardAvoidingView (for forms with TextInput)
-//   bg       → background color (default #F4F6F8)
-//   padH     → add horizontal padding (default false)
-// ─────────────────────────────────────────────────────────────────────────────
+// ANDROID-ONLY: Global wrapper for all screens
+// Handles: SafeAreaView, StatusBar, KeyboardAvoidingView, ScrollView
 
 import React from 'react';
 import {
@@ -33,40 +17,36 @@ export default function ScreenWrapper({
   bg        = '#F4F6F8',
   padH      = false,
   style,
+  contentStyle,
 }) {
-  // Inner content
-  let content = (
+  let content = scroll ? (
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={[
+        s.scrollContent,
+        padH && { paddingHorizontal: H_PAD },
+        contentStyle,
+      ]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      bounces={false}
+      overScrollMode="never"
+    >
+      {children}
+    </ScrollView>
+  ) : (
     <View style={[s.inner, padH && { paddingHorizontal: H_PAD }, style]}>
       {children}
     </View>
   );
 
-  // Wrap in ScrollView if scroll=true
-  if (scroll) {
-    content = (
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={[
-          s.scrollContent,
-          padH && { paddingHorizontal: H_PAD },
-          style,
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
-        {children}
-      </ScrollView>
-    );
-  }
-
-  // Wrap in KAV if keyboard=true (forms)
+  // Android: behavior="height" works better than "padding"
   if (keyboard) {
     content = (
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
+        behavior="height"
+        keyboardVerticalOffset={0}
       >
         {content}
       </KeyboardAvoidingView>
@@ -74,12 +54,16 @@ export default function ScreenWrapper({
   }
 
   return (
-    // SafeAreaView with edges — handles all Android screen ratios
     <SafeAreaView
       style={[s.safe, { backgroundColor: bg }]}
       edges={['left', 'right', 'bottom']}
     >
-      {/* Manual top padding for Android status bar */}
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={bg}
+        translucent={false}
+      />
+      {/* Android status bar top padding */}
       <View style={{ height: STATUS_BAR_H }} />
       {content}
     </SafeAreaView>

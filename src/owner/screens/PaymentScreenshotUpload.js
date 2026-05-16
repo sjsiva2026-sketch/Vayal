@@ -90,7 +90,7 @@ export default function PaymentScreenshotUpload({ navigation, route }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="height"
       >
         <ScrollView
           contentContainerStyle={s.scroll}

@@ -42,6 +42,7 @@ export default function FarmerHome({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        overScrollMode="never"
         contentContainerStyle={s.scroll}
       >
         {/* Header */}
