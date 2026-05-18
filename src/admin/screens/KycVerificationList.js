@@ -241,10 +241,12 @@ export default function KycVerificationList() {
                   <Text style={s.docsTitle}>Documents</Text>
                   <View style={s.docsRow}>
                     {[
-                      { label: 'Profile',  url: item.profilePhotoUrl },
-                      { label: 'License',  url: item.licenseUrl      },
-                      { label: 'Aadhar',   url: item.aadharUrl       },
-                      { label: 'Vehicle',  url: item.vehicleImageUrl },
+                      { label: 'Profile',       url: item.profilePhotoUrl },
+                      { label: 'License Front', url: item.licenseFrontUrl  },
+                      { label: 'License Back',  url: item.licenseBackUrl   },
+                      { label: 'Aadhar Front',  url: item.aadharFrontUrl   },
+                      { label: 'Aadhar Back',   url: item.aadharBackUrl    },
+                      { label: 'Vehicle',       url: item.vehicleImageUrl  },
                     ].map(doc => (
                       <TouchableOpacity
                         key={doc.label}

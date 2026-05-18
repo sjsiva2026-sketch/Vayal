@@ -2,7 +2,7 @@
   "expo": {
     "name": "Namma Vayal",
     "slug": "namma-vayal",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#1C7C54",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.vayal.app",
-      "versionCode": 6,
+      "versionCode": 7,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#1C7C54"
@@ -36,6 +36,15 @@
           "autoVerify": true,
           "data": [{ "scheme": "nammavayal" }],
           "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "SEND",
+          "category": ["DEFAULT"],
+          "data": [
+            { "mimeType": "image/jpeg" },
+            { "mimeType": "image/png" },
+            { "mimeType": "image/*" }
+          ]
         }
       ]
     },
@@ -43,6 +52,7 @@
     "scheme": "nammavayal",
     "plugins": [
       "expo-font",
+      "expo-media-library",
       [
         "expo-image-picker",
         {

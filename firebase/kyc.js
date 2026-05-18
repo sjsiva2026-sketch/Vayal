@@ -1,67 +1,67 @@
 // firebase/kyc.js
-// KYC Upload + Firestore
-// NEW: vehicleImageUrl added
-// FIX: submitKyc now includes vehicle image upload
+// UPDATED: License Front+Back, Aadhar Front+Back uploads
+// Storage paths: /kyc/{ownerId}/license_front.jpg etc.
 
 import { doc, updateDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
 
-// ── Upload image to /kyc/{ownerId}/{slot} ──────────────────────────────────
+// ── Upload single image to /kyc/{ownerId}/{slot} ──────────────────────────
 async function uploadKycImage(ownerId, imageUri, slot) {
   const res  = await fetch(imageUri);
   const blob = await res.blob();
-  const ext  = imageUri.split('.').pop()?.split('?')[0]?.toLowerCase() || 'jpg';
-  const sRef = ref(storage, `kyc/${ownerId}/${slot}.${ext}`);
-  await uploadBytes(sRef, blob, { contentType: blob.type || 'image/jpeg' });
+  const sRef = ref(storage, `kyc/${ownerId}/${slot}.jpg`);
+  await uploadBytes(sRef, blob, { contentType: 'image/jpeg' });
   return getDownloadURL(sRef);
 }
 
-// ── Submit KYC (owner) ─────────────────────────────────────────────────────
-// Uploads: profile + license + aadhar + vehicle (NEW)
-// Sets: kycStatus=pending, isVerified=false, accessGranted=false
+// ── Submit KYC — all 8 fields mandatory ──────────────────────────────────
 export async function submitKyc({
   ownerId,
   name,
   vehicleNumber,
   profileUri,
-  licenseUri,
-  aadharUri,
-  vehicleImageUri,   // NEW
+  licenseFrontUri,
+  licenseBackUri,
+  aadharFrontUri,
+  aadharBackUri,
+  vehicleImageUri,
 }) {
   // Upload all images in parallel
-  const uploads = [
-    uploadKycImage(ownerId, profileUri,  'profile'),
-    uploadKycImage(ownerId, licenseUri,  'license'),
-    uploadKycImage(ownerId, aadharUri,   'aadhar'),
-  ];
-
-  if (vehicleImageUri) {
-    uploads.push(uploadKycImage(ownerId, vehicleImageUri, 'vehicle'));
-  }
-
-  const results = await Promise.all(uploads);
-  const [profilePhotoUrl, licenseUrl, aadharUrl] = results;
-  const vehicleImageUrl = vehicleImageUri ? results[3] : null;
+  const [
+    profilePhotoUrl,
+    licenseFrontUrl,
+    licenseBackUrl,
+    aadharFrontUrl,
+    aadharBackUrl,
+    vehicleImageUrl,
+  ] = await Promise.all([
+    uploadKycImage(ownerId, profileUri,      'profile'),
+    uploadKycImage(ownerId, licenseFrontUri, 'license_front'),
+    uploadKycImage(ownerId, licenseBackUri,  'license_back'),
+    uploadKycImage(ownerId, aadharFrontUri,  'aadhar_front'),
+    uploadKycImage(ownerId, aadharBackUri,   'aadhar_back'),
+    uploadKycImage(ownerId, vehicleImageUri, 'vehicle'),
+  ]);
 
   await setDoc(doc(db, 'users', ownerId), {
     name,
-    vehicleNumber:    vehicleNumber.trim().toUpperCase(),
+    vehicleNumber:   vehicleNumber.trim().toUpperCase(),
     profilePhotoUrl,
-    licenseUrl,
-    aadharUrl,
-    ...(vehicleImageUrl && { vehicleImageUrl }),
-    kycStatus:        'pending',
-    isVerified:       false,
-    accessGranted:    false,
-    kycSubmittedAt:   serverTimestamp(),
-    kycRejectReason:  null,
+    licenseFrontUrl,
+    licenseBackUrl,
+    aadharFrontUrl,
+    aadharBackUrl,
+    vehicleImageUrl,
+    kycStatus:       'pending',
+    isVerified:      false,
+    accessGranted:   false,
+    kycSubmittedAt:  serverTimestamp(),
+    kycRejectReason: null,
   }, { merge: true });
 }
 
-// ── Real-time KYC listener ─────────────────────────────────────────────────
-// Called from both KycScreen AND AppNavigator
-// Returns unsubscribe function
+// ── Realtime KYC listener ─────────────────────────────────────────────────
 export function listenKycStatus(ownerId, onChange) {
   if (!ownerId) return () => {};
   return onSnapshot(
@@ -70,9 +70,9 @@ export function listenKycStatus(ownerId, onChange) {
       if (!snap.exists()) return;
       const d = snap.data();
       onChange({
-        kycStatus:      d.kycStatus      ?? 'not_submitted',
-        isVerified:     d.isVerified     ?? false,
-        accessGranted:  d.accessGranted  ?? false,
+        kycStatus:       d.kycStatus       ?? 'not_submitted',
+        isVerified:      d.isVerified      ?? false,
+        accessGranted:   d.accessGranted   ?? false,
         kycRejectReason: d.kycRejectReason ?? '',
       });
     },
@@ -80,19 +80,18 @@ export function listenKycStatus(ownerId, onChange) {
   );
 }
 
-// ── ADMIN: Approve KYC ────────────────────────────────────────────────────
-// Sets all 3 flags — owner app auto-unlocks via onSnapshot
+// ── ADMIN: Approve KYC ───────────────────────────────────────────────────
 export async function adminApproveKyc(ownerId) {
   await updateDoc(doc(db, 'users', ownerId), {
-    kycStatus:      'verified',
-    isVerified:     true,
-    accessGranted:  true,
-    kycVerifiedAt:  serverTimestamp(),
+    kycStatus:       'verified',
+    isVerified:      true,
+    accessGranted:   true,
+    kycVerifiedAt:   serverTimestamp(),
     kycRejectReason: null,
   });
 }
 
-// ── ADMIN: Reject KYC ────────────────────────────────────────────────────
+// ── ADMIN: Reject KYC ───────────────────────────────────────────────────
 export async function adminRejectKyc(ownerId, reason = '') {
   await updateDoc(doc(db, 'users', ownerId), {
     kycStatus:       'rejected',

@@ -6,6 +6,8 @@ export const ICONS = {
   gpay:    require('./icons/gpay.png'),
   phonepe: require('./icons/phonepe.png'),
   paytm:   require('./icons/paytm.png'),
+  upiQr:   require('./icons/upi_qr.png'),   // UPI QR
+  bankQr:  require('./icons/upi_qr.png'),   // Bank QR (replace with bank_qr.png if different)
 };
 
 export const CATEGORY_IMAGES = {

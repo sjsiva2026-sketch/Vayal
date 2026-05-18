@@ -205,7 +205,6 @@ export default function AppNavigator() {
           component={PayCommission}
           options={{ title: 'Pay Commission', headerStyle: { backgroundColor: '#B91C1C', elevation: 0 }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800', fontSize: 18, color: '#fff' }, gestureEnabled: false }}
         />
-        {/* NEW: Separate screenshot upload screen */}
         <Stack.Screen
           name="PaymentScreenshotUpload"
           component={PaymentScreenshotUpload}
