@@ -9,7 +9,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './config';
 
 export const COMMISSION_RATE = 20;
-export const LOCK_WINDOW_MS  = 24 * 60 * 60 * 1000; // 24 hours PRODUCTION
+export const LOCK_WINDOW_MS  = 24 * 60 * 60 * 1000; // ⚠️ TESTING: 5 minutes — change to 24*60*60*1000 for production
 
 // ── Timestamp → ms ──────────────────────────────────────────────────────────
 function toMs(value) {

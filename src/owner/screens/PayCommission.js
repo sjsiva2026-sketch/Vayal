@@ -92,19 +92,42 @@ export default function PayCommission({ navigation }) {
   const downloadQr = async () => {
     setDownloading(true);
     try {
+      // Request permission
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Allow storage access to download QR code.');
+        Alert.alert('Permission Required',
+          'Allow storage access:\nSettings → Apps → Namma Vayal → Permissions → Storage → Allow');
+        setDownloading(false);
         return;
       }
-      // Resolve asset URI from require()
-      const asset      = Image.resolveAssetSource(ICONS.upiQr);
-      const localUri   = FileSystem.documentDirectory + 'nammavayal_qr.png';
-      await FileSystem.downloadAsync(asset.uri, localUri);
-      await MediaLibrary.saveToLibraryAsync(localUri);
-      Alert.alert('✅ Downloaded!', 'QR Code saved to your gallery.');
+
+      // Copy bundled asset to cache using expo-file-system
+      const asset      = require('../../../assets/icons/upi_qr.png');
+      const assetUri   = Image.resolveAssetSource(asset).uri;
+      const destPath   = FileSystem.cacheDirectory + 'nammavayal_qr_' + Date.now() + '.png';
+
+      // Download/copy to cache
+      await FileSystem.downloadAsync(assetUri, destPath);
+
+      // Save to gallery
+      const saved = await MediaLibrary.createAssetAsync(destPath);
+
+      // Optional: create album
+      try {
+        const album = await MediaLibrary.getAlbumAsync('Namma Vayal');
+        if (album) {
+          await MediaLibrary.addAssetsToAlbumAsync([saved], album, false);
+        } else {
+          await MediaLibrary.createAlbumAsync('Namma Vayal', saved, false);
+        }
+      } catch { /* album optional */ }
+
+      Alert.alert('✅ QR Saved!', 'QR Code saved to gallery → Namma Vayal album.');
     } catch (e) {
-      Alert.alert('Download Failed', 'Could not save QR. Try again.');
+      Alert.alert(
+        'Save Failed',
+        'Could not save QR code.\n\nManual option:\n1. Long press the QR image\n2. Save to gallery',
+      );
     } finally { setDownloading(false); }
   };
 
@@ -214,13 +237,20 @@ export default function PayCommission({ navigation }) {
             Scan this QR code using any UPI app to pay commission
           </Text>
 
-          {/* QR Image */}
+          {/* QR Image — long press to save */}
           <View style={s.qrWrap}>
-            <Image
-              source={ICONS.upiQr}
-              style={s.qrImage}
-              resizeMode="contain"
-            />
+            <TouchableOpacity
+              onLongPress={downloadQr}
+              activeOpacity={1}
+              delayLongPress={600}
+            >
+              <Image
+                source={ICONS.upiQr}
+                style={s.qrImage}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+            <Text style={s.qrLongPressTip}>Long press QR to save</Text>
           </View>
 
           {/* Receiver info */}
@@ -329,6 +359,7 @@ const s = StyleSheet.create({
   qrCardDesc:     { fontSize: rf(13), color: '#6B7280', textAlign: 'center', marginBottom: rs(20), lineHeight: rf(20) },
 
   qrWrap:         { alignItems: 'center', marginBottom: rs(16) },
+  qrLongPressTip: { fontSize: rf(11), color: '#9CA3AF', marginTop: rs(6), fontStyle: 'italic' },
   qrImage:        {
     width:       W * 0.70,
     height:      undefined,

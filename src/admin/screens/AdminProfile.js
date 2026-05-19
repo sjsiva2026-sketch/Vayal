@@ -146,18 +146,27 @@ export default function AdminProfile({ navigation }) {
           ))}
         </View>
 
-        {/* SUPPORT */}
+        {/* SUPPORT — WhatsApp only */}
         <Text style={s.sectionTitle}>Support</Text>
-        <View style={s.supportRow}>
-          <TouchableOpacity style={s.supportBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)} activeOpacity={0.85}>
-            <Text style={s.supportIcon}>📞</Text>
-            <Text style={s.supportTxt}>Call Support</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[s.supportBtn,{borderColor:'#25D366'}]} onPress={() => Linking.openURL(`whatsapp://send?phone=91${SUPPORT_PHONE}`)} activeOpacity={0.85}>
-            <Text style={s.supportIcon}>💬</Text>
-            <Text style={[s.supportTxt,{color:'#25D366'}]}>WhatsApp</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={s.waLargeBtn}
+          onPress={async () => {
+            const url = `whatsapp://send?phone=91${SUPPORT_PHONE}`;
+            const web = `https://wa.me/91${SUPPORT_PHONE}`;
+            try {
+              const ok = await Linking.canOpenURL(url);
+              await Linking.openURL(ok ? url : web);
+            } catch { await Linking.openURL(web); }
+          }}
+          activeOpacity={0.85}
+        >
+          <Text style={s.waLargeIcon}>💬</Text>
+          <View style={{flex:1}}>
+            <Text style={s.waLargeTitle}>WhatsApp Support</Text>
+            <Text style={s.waLargeSub}>+91 {SUPPORT_PHONE}</Text>
+          </View>
+          <Text style={s.waLargeArrow}>›</Text>
+        </TouchableOpacity>
 
         {/* MENU */}
         <Text style={s.sectionTitle}>Settings</Text>
@@ -214,9 +223,11 @@ const s = StyleSheet.create({
   actionBadgeTxt:{ color:'#fff', fontSize:rf(9), fontWeight:'900' },
   actionLbl:     { fontSize:rf(12), fontWeight:'700' },
   supportRow:    { flexDirection:'row', paddingHorizontal:H_PAD, gap:rs(10), marginBottom:rs(16) },
-  supportBtn:    { flex:1, backgroundColor:'#fff', borderRadius:rs(12), paddingVertical:rs(14), alignItems:'center', borderWidth:rs(1.5), borderColor:COLORS.primary, elevation:1 },
-  supportIcon:   { fontSize:rf(22), marginBottom:rs(4) },
-  supportTxt:    { fontSize:rf(13), fontWeight:'700', color:COLORS.primary },
+  waLargeBtn:    { flexDirection:'row', alignItems:'center', backgroundColor:'#fff', borderRadius:rs(14), padding:rs(16), marginHorizontal:H_PAD, marginBottom:rs(16), borderWidth:rs(1.5), borderColor:'#25D366', elevation:2 },
+  waLargeIcon:   { fontSize:rf(28), marginRight:rs(14) },
+  waLargeTitle:  { fontSize:rf(15), fontWeight:'800', color:'#16A34A', marginBottom:rs(3) },
+  waLargeSub:    { fontSize:rf(12), color:'#6B7280' },
+  waLargeArrow:  { fontSize:rf(24), color:'#25D366', fontWeight:'700' },
   menuCard:      { backgroundColor:'#fff', marginHorizontal:H_PAD, borderRadius:rs(16), overflow:'hidden', elevation:1, marginBottom:rs(12) },
   menuRow:       { flexDirection:'row', alignItems:'center', paddingHorizontal:rs(16), paddingVertical:rs(14) },
   menuBorder:    { borderBottomWidth:1, borderBottomColor:'#F4F5F7' },

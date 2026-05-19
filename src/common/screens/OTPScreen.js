@@ -88,6 +88,13 @@ export default function OTPScreen({ navigation, route }) {
       const profile = await getUser(authUser.uid);
 
       if (profile) {
+        // Check if user is blocked
+        if (profile.isBlocked === true) {
+          setError('Your account has been blocked by admin. Contact support.');
+          setLoading(false);
+          busyRef.current = false;
+          return;
+        }
         // Existing user → set context → route by role + KYC status
         setUser(authUser);
         setAuthProfile(profile);
@@ -103,7 +110,18 @@ export default function OTPScreen({ navigation, route }) {
         });
       }
     } catch (e) {
-      setError(e.message || 'Verification failed. Try again.');
+      const msg = (e?.message || '').toLowerCase();
+      let errMsg = 'Verification failed. Try again.';
+      if (msg.includes('invalid') || msg.includes('wrong') || msg.includes('expired')) {
+        errMsg = 'Wrong or expired OTP. Try again.';
+      } else if (msg.includes('network') || msg.includes('offline') || msg.includes('unavailable')) {
+        errMsg = 'No internet connection. Check and retry.';
+      } else if (msg.includes('too-many') || msg.includes('too many')) {
+        errMsg = 'Too many attempts. Wait a few minutes.';
+      } else if (msg.includes('blocked')) {
+        errMsg = e.message;
+      }
+      setError(errMsg);
       setOtp('');
       setTimeout(() => inputRef.current?.focus(), 150);
     } finally {

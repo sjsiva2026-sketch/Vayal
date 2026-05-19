@@ -38,7 +38,16 @@ export default function LoginScreen({ navigation, route }) {
       if (result?.otp) setDevOTP(result.otp);
       navigation.navigate('OTP', { phone: cleaned, role, devOTP: result?.otp });
     } catch (e) {
-      setError(e.message || 'Could not send OTP. Check connection.');
+      const msg = (e?.message || '').toLowerCase();
+      if (msg.includes('network') || msg.includes('offline') || msg.includes('unavailable')) {
+        setError('No internet connection. Check and try again.');
+      } else if (msg.includes('too-many-requests') || msg.includes('too many')) {
+        setError('Too many attempts. Wait a few minutes and try again.');
+      } else if (msg.includes('invalid-phone')) {
+        setError('Invalid phone number. Check and try again.');
+      } else {
+        setError(e.message || 'Could not send OTP. Check connection.');
+      }
     } finally { setLoading(false); }
   };
 
