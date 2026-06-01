@@ -55,7 +55,7 @@ export default function DailySummary({ navigation }) {
             .map(d => ({ id: d.id, ...d.data() }))
             .filter(b => b.date === today && b.status === 'completed')
         );
-      } catch (e) { console.warn('DailySummary load:', e.message); }
+      } catch { }
       finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };

@@ -1,1 +1,2 @@
-const VAYAL_SCHEME = 'vayal'; // matches scheme in app.json — vayal://upi?Status=SUCCESS&txnId=...
+// REMOVED — temp file
+export default null;

@@ -118,6 +118,7 @@ export default function KycScreen({ navigation }) {
   const [aadharBackAsset,   setAadharBackAsset]   = useState(null);
   const [vehicleAsset,     setVehicleAsset]     = useState(null);
   const [uploading,        setUploading]        = useState(false);
+  const [uploadProgress,    setUploadProgress]    = useState(0); // 0-6
 
   // Realtime listener
   useEffect(() => {
@@ -150,6 +151,7 @@ export default function KycScreen({ navigation }) {
     if (!vehicleAsset)       { Alert.alert('Required', 'Vehicle image is required');              return; }
 
     setUploading(true);
+    setUploadProgress(0);
     try {
       await submitKyc({
         ownerId:              uid,
@@ -161,6 +163,7 @@ export default function KycScreen({ navigation }) {
         aadharFrontUri:       aadharFrontAsset.uri,
         aadharBackUri:        aadharBackAsset.uri,
         vehicleImageUri:      vehicleAsset.uri,
+        onProgress: (done, total) => setUploadProgress(done),
       });
       updateProfile({
         kycStatus:     'pending',
@@ -325,6 +328,16 @@ export default function KycScreen({ navigation }) {
               </Text>
             </View>
 
+            {/* Progress bar */}
+            {uploading && (
+              <View style={s.progressWrap}>
+                <View style={s.progressTrack}>
+                  <View style={[s.progressFill, { width: `${(uploadProgress / 6) * 100}%` }]} />
+                </View>
+                <Text style={s.progressTxt}>{uploadProgress} of 6 photos uploaded</Text>
+              </View>
+            )}
+
             {/* Submit */}
             <TouchableOpacity
               style={[s.submitBtn, uploading && s.submitBtnOff]}
@@ -333,9 +346,11 @@ export default function KycScreen({ navigation }) {
               activeOpacity={0.88}
             >
               {uploading ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flexDirection:'row', alignItems:'center' }}>
                   <ActivityIndicator color="#fff" size="small" style={{ marginRight: rs(10) }} />
-                  <Text style={s.submitBtnTxt}>Uploading documents...</Text>
+                  <Text style={s.submitBtnTxt}>
+                    Uploading {uploadProgress}/6 photos...
+                  </Text>
                 </View>
               ) : (
                 <Text style={s.submitBtnTxt}>
@@ -383,4 +398,8 @@ const s = StyleSheet.create({
   submitBtn:      { backgroundColor: COLORS.primary, borderRadius: rs(14), paddingVertical: rs(16), alignItems: 'center', justifyContent: 'center' },
   submitBtnOff:   { backgroundColor: '#D1D5DB' },
   submitBtnTxt:   { color: '#fff', fontSize: rf(15), fontWeight: '800' },
+  progressWrap:   { marginBottom: rs(12) },
+  progressTrack:  { height: rs(6), backgroundColor: '#E5E7EB', borderRadius: rs(3), overflow: 'hidden', marginBottom: rs(6) },
+  progressFill:   { height: '100%', backgroundColor: COLORS.primary, borderRadius: rs(3) },
+  progressTxt:    { fontSize: rf(12), color: '#6B7280', textAlign: 'center', fontWeight: '600' },
 });

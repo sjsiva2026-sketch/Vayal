@@ -1,7 +1,7 @@
 // App.js — Production ready, all Android ratios supported
-import React, { Component, useState, useEffect } from 'react';
+import React, { Component, useState, useEffect, useRef } from 'react';
 import {
-  Text, StyleSheet, View, ActivityIndicator, StatusBar,
+  Text, StyleSheet, View, ActivityIndicator, StatusBar, Linking,
 } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView }     from 'react-native-gesture-handler';
@@ -78,6 +78,39 @@ const ls = StyleSheet.create({
 // ── Root ───────────────────────────────────────────────────────────────────
 export default function App() {
   const [essentialReady, setEssentialReady] = useState(false);
+  const navRef = useRef(null);
+
+  // ── Handle share intent (GPay/PhonePe/Paytm share) ────────────────────
+  useEffect(() => {
+    // Handle app opened via share intent
+    const handleUrl = ({ url }) => {
+      if (!url) return;
+      try {
+        const uri = decodeURIComponent(url);
+        if (uri.startsWith('content://') || uri.startsWith('file://') ||
+            uri.includes('image') || uri.includes('screenshot')) {
+          // Navigate to PaymentScreenshotUpload with shared image
+          if (navRef.current?.isReady()) {
+            navRef.current.navigate('PaymentScreenshotUpload', {
+              sharedImageUri: uri,
+              ownerId:        null, // will be filled from context
+              commissionAmount: 0,
+            });
+          }
+        }
+      } catch {}
+    };
+
+    // App already open — share received
+    const sub = Linking.addEventListener('url', handleUrl);
+
+    // App opened fresh via share
+    Linking.getInitialURL().then(url => {
+      if (url) handleUrl({ url });
+    }).catch(() => {});
+
+    return () => sub?.remove();
+  }, []);
 
   useEffect(() => {
     let done = false;

@@ -20,9 +20,11 @@ import { COLORS }        from '../../../constants/colors';
 import { rs, rf, H_PAD, STATUS_BAR_H } from '../../../utils/responsive';
 
 export default function PaymentScreenshotUpload({ navigation, route }) {
-  const { ownerId, commissionAmount, sharedImageUri } = route.params || {};
-  const { updateProfile }             = useUser();
-  const today                         = new Date().toISOString().slice(0, 10);
+  const { ownerId: paramOwnerId, commissionAmount, sharedImageUri } = route.params || {};
+  const { userProfile, updateProfile } = useUser();
+  // Use context uid if ownerId not passed (share intent case)
+  const ownerId = paramOwnerId || userProfile?.id || '';
+  const today   = new Date().toISOString().slice(0, 10);
 
   const [screenshot, setScreenshot] = useState(
     sharedImageUri ? { uri: sharedImageUri } : null
