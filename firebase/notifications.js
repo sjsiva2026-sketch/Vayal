@@ -1,12 +1,14 @@
 // firebase/notifications.js
-// FCM Push Notifications — Farmer, Owner, Admin
-// Uses expo-notifications + Firebase Firestore token storage
+// Push Notifications — Farmer, Owner, Admin
+// expo-notifications + Expo Push API
 
 import * as Notifications from 'expo-notifications';
 import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from './config';
 
-// ── Notification handler setup ────────────────────────────────────────────
+const PROJECT_ID = '6b073f71-f2fe-4f59-ab5c-44984f7643e8';
+
+// ── Setup notification handler ────────────────────────────────────────────
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -15,25 +17,24 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ── Register device + save FCM token to Firestore ────────────────────────
+// ── Register device + save token ─────────────────────────────────────────
 export async function registerForPushNotifications(userId) {
   try {
     const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
+    let status = existing;
     if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
+      const { status: asked } = await Notifications.requestPermissionsAsync();
+      status = asked;
     }
-    if (finalStatus !== 'granted') return null;
+    if (status !== 'granted') return null;
 
     const token = (await Notifications.getExpoPushTokenAsync({
-      projectId: '6b073f71-f2fe-4f59-ab5c-44984f7643e8',
+      projectId: PROJECT_ID,
     })).data;
 
-    // Save token to Firestore
     if (userId && token) {
       await updateDoc(doc(db, 'users', userId), {
-        expoPushToken: token,
+        expoPushToken:  token,
         tokenUpdatedAt: new Date().toISOString(),
       });
     }
@@ -41,186 +42,125 @@ export async function registerForPushNotifications(userId) {
   } catch { return null; }
 }
 
-// ── Send local notification (in-app) ─────────────────────────────────────
-export async function sendLocalNotification(title, body, data = {}) {
+// ── Send to user ──────────────────────────────────────────────────────────
+async function pushToUser(userId, title, body, data = {}) {
   try {
-    await Notifications.scheduleNotificationAsync({
-      content: { title, body, data, sound: true },
-      trigger: null, // immediate
-    });
-  } catch {}
-}
-
-// ── Send push to specific user via Expo Push API ──────────────────────────
-async function sendPushToUser(userId, title, body, data = {}) {
-  try {
-    const snap = await getDoc(doc(db, 'users', userId));
-    if (!snap.exists()) return;
+    const snap  = await getDoc(doc(db, 'users', userId));
     const token = snap.data()?.expoPushToken;
     if (!token) return;
-
     await fetch('https://exp.host/--/api/v2/push/send', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to:    token,
-        title,
-        body,
-        data,
-        sound: 'default',
-        priority: 'high',
-      }),
+      body: JSON.stringify({ to:token, title, body, data, sound:'default', priority:'high' }),
     });
   } catch {}
 }
 
-// ── Send push to admin ────────────────────────────────────────────────────
-async function notifyAdmin(title, body, data = {}) {
+// ── Send to admin ─────────────────────────────────────────────────────────
+async function pushToAdmin(title, body, data = {}) {
   try {
-    const q    = query(collection(db, 'users'), where('role', '==', 'admin'));
-    const snap = await getDocs(q);
-    for (const d of snap.docs) {
+    const snap = await getDocs(query(collection(db,'users'), where('role','==','admin')));
+    await Promise.all(snap.docs.map(async d => {
       const token = d.data()?.expoPushToken;
-      if (!token) continue;
+      if (!token) return;
       await fetch('https://exp.host/--/api/v2/push/send', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: token, title, body, data, sound: 'default', priority: 'high' }),
+        body: JSON.stringify({ to:token, title, body, data, sound:'default', priority:'high' }),
       });
-    }
+    }));
   } catch {}
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// FARMER NOTIFICATIONS
-// ══════════════════════════════════════════════════════════════════════════
-
-export async function notifyFarmerBookingAccepted(farmerId, machineName) {
-  await sendPushToUser(
-    farmerId,
+// ══════════════════════════════════════════════════════════
+// FARMER
+// ══════════════════════════════════════════════════════════
+export const notifyFarmerBookingAccepted = (farmerId, machineName) =>
+  pushToUser(farmerId,
     '✅ Booking Accepted!',
     `உங்கள் ${machineName} booking accept ஆச்சு! Owner வருவார்.`,
-    { screen: 'FarmerBookings' }
-  );
-}
+    { screen:'FarmerBookings' });
 
-export async function notifyFarmerBookingRejected(farmerId, machineName) {
-  await sendPushToUser(
-    farmerId,
+export const notifyFarmerBookingRejected = (farmerId, machineName) =>
+  pushToUser(farmerId,
     '❌ Booking Rejected',
     `${machineName} booking reject ஆச்சு. வேற machine try பண்ணுங்க.`,
-    { screen: 'FarmerHome' }
-  );
-}
+    { screen:'FarmerHome' });
 
-export async function notifyFarmerJobCompleted(farmerId) {
-  await sendPushToUser(
-    farmerId,
-    '🌾 வேலை முடிஞ்சது!',
-    'OTP enter பண்ணி job complete பண்ணுங்க.',
-    { screen: 'FarmerBookings' }
-  );
-}
-
-export async function notifyFarmerJobStarted(farmerId, machineName) {
-  await sendPushToUser(
-    farmerId,
+export const notifyFarmerJobStarted = (farmerId, machineName) =>
+  pushToUser(farmerId,
     '🚜 Machine வந்துவிட்டது!',
     `${machineName} work start ஆகுது.`,
-    { screen: 'FarmerBookings' }
-  );
-}
+    { screen:'FarmerBookings' });
 
-// ══════════════════════════════════════════════════════════════════════════
-// OWNER NOTIFICATIONS
-// ══════════════════════════════════════════════════════════════════════════
+export const notifyFarmerJobCompleted = (farmerId) =>
+  pushToUser(farmerId,
+    '🌾 வேலை முடிஞ்சது!',
+    'OTP enter பண்ணி job complete பண்ணுங்க.',
+    { screen:'FarmerBookings' });
 
-export async function notifyOwnerNewBooking(ownerId, farmerName) {
-  await sendPushToUser(
-    ownerId,
+// ══════════════════════════════════════════════════════════
+// OWNER
+// ══════════════════════════════════════════════════════════
+export const notifyOwnerNewBooking = (ownerId, farmerName) =>
+  pushToUser(ownerId,
     '📋 புதுசா Booking!',
     `${farmerName} booking request அனுப்பினாங்க. Accept/Reject பண்ணுங்க.`,
-    { screen: 'BookingRequests' }
-  );
-}
+    { screen:'BookingRequests' });
 
-export async function notifyOwnerPaymentVerified(ownerId) {
-  await sendPushToUser(
-    ownerId,
-    '🔓 Commission Verified!',
-    'Payment approve ஆச்சு. App unlock ஆச்சு. All features restored! 🎉',
-    { screen: 'OwnerHome' }
-  );
-}
-
-export async function notifyOwnerPaymentRejected(ownerId) {
-  await sendPushToUser(
-    ownerId,
-    '❌ Payment Rejected',
-    'Admin screenshot reject பண்ணாங்க. Clear screenshot upload பண்ணுங்க.',
-    { screen: 'PayCommission' }
-  );
-}
-
-export async function notifyOwnerKycApproved(ownerId) {
-  await sendPushToUser(
-    ownerId,
+export const notifyOwnerKycApproved = (ownerId) =>
+  pushToUser(ownerId,
     '✅ KYC Approved!',
     'Documents verify ஆச்சு. Bookings accept பண்ணலாம்!',
-    { screen: 'OwnerHome' }
-  );
-}
+    { screen:'OwnerHome' });
 
-export async function notifyOwnerKycRejected(ownerId, reason = '') {
-  await sendPushToUser(
-    ownerId,
+export const notifyOwnerKycRejected = (ownerId, reason = '') =>
+  pushToUser(ownerId,
     '❌ KYC Rejected',
     reason || 'Documents reject ஆச்சு. Re-upload பண்ணுங்க.',
-    { screen: 'KycScreen' }
-  );
-}
+    { screen:'KycScreen' });
 
-export async function notifyOwnerTimerWarning(ownerId, minutesLeft) {
-  await sendPushToUser(
-    ownerId,
+export const notifyOwnerPaymentVerified = (ownerId) =>
+  pushToUser(ownerId,
+    '🔓 Commission Verified!',
+    'Payment approve ஆச்சு. App unlock ஆச்சு! 🎉',
+    { screen:'OwnerHome' });
+
+export const notifyOwnerPaymentRejected = (ownerId) =>
+  pushToUser(ownerId,
+    '❌ Payment Rejected',
+    'Screenshot reject ஆச்சு. Clear screenshot upload பண்ணுங்க.',
+    { screen:'PayCommission' });
+
+export const notifyOwnerTimerWarning = (ownerId, minutesLeft) =>
+  pushToUser(ownerId,
     '⏰ Commission Due Soon!',
-    `${minutesLeft} minutes-ல் app lock ஆகும். Commission pay பண்ணுங்க!`,
-    { screen: 'PayCommission' }
-  );
-}
+    `${minutesLeft} minutes-ல் app lock ஆகும். Pay பண்ணுங்க!`,
+    { screen:'PayCommission' });
 
-// ══════════════════════════════════════════════════════════════════════════
-// ADMIN NOTIFICATIONS
-// ══════════════════════════════════════════════════════════════════════════
-
-export async function notifyAdminNewKyc(ownerName) {
-  await notifyAdmin(
+// ══════════════════════════════════════════════════════════
+// ADMIN
+// ══════════════════════════════════════════════════════════
+export const notifyAdminNewKyc = (ownerName) =>
+  pushToAdmin(
     '🪪 New KYC Submitted',
-    `${ownerName} KYC documents submit பண்ணாங்க. Verify பண்ணுங்க.`,
-    { screen: 'KycVerificationList' }
-  );
-}
+    `${ownerName} KYC submit பண்ணாங்க. Verify பண்ணுங்க.`,
+    { screen:'KycVerificationList' });
 
-export async function notifyAdminPaymentUploaded(ownerName, amount) {
-  await notifyAdmin(
+export const notifyAdminPaymentUploaded = (ownerName, amount) =>
+  pushToAdmin(
     '💰 Payment Proof Uploaded',
-    `${ownerName} ₹${amount} commission screenshot upload பண்ணாங்க. Verify பண்ணுங்க.`,
-    { screen: 'PaymentsList' }
-  );
-}
+    `${ownerName} ₹${amount} commission screenshot upload பண்ணாங்க.`,
+    { screen:'PaymentsList' });
 
-export async function notifyAdminNewUser(userName, role) {
-  await notifyAdmin(
+export const notifyAdminNewUser = (userName, role) =>
+  pushToAdmin(
     '👤 New User Registered',
     `${userName} (${role}) register ஆனாங்க.`,
-    { screen: 'UsersList' }
-  );
-}
+    { screen:'UsersList' });
 
-export async function notifyAdminNewBooking(farmerName, machineName) {
-  await notifyAdmin(
+export const notifyAdminNewBooking = (farmerName, machineName) =>
+  pushToAdmin(
     '📋 New Booking Created',
     `${farmerName} ${machineName} booking create பண்ணாங்க.`,
-    { screen: 'AdminDashboard' }
-  );
-}
+    { screen:'AdminDashboard' });

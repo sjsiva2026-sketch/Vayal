@@ -8,7 +8,6 @@ import { GestureHandlerRootView }     from 'react-native-gesture-handler';
 import { SafeAreaProvider }           from 'react-native-safe-area-context';
 import * as Font                      from 'expo-font';
 import * as SplashScreen              from 'expo-splash-screen';
-import * as Notifications             from 'expo-notifications';
 
 import { AuthProvider }            from './context/AuthContext';
 import { UserProvider }            from './context/UserContext';
