@@ -13,6 +13,10 @@ import { useFocusEffect }            from '@react-navigation/native';
 import { collection, getDocs }       from 'firebase/firestore';
 import { db }                        from '../../../firebase/config';
 import { adminVerifyPayment, adminRejectPayment } from '../../../firebase/commission';
+import {
+  notifyOwnerPaymentVerified,
+  notifyOwnerPaymentRejected,
+} from '../../../firebase/notifications';
 import { COLORS }      from '../../../constants/colors';
 import { rs, rf, H_PAD } from '../../../utils/responsive';
 import Loader          from '../../common/components/Loader';

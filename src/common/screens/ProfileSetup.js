@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { CommonActions }   from '@react-navigation/native';
 import { createUser }      from '../../../firebase/firestore';
+import { registerForPushNotifications, notifyAdminNewUser } from '../../../firebase/notifications';
 import { useAuth }         from '../../../context/AuthContext';
 import { useUser }         from '../../../context/UserContext';
 import DistrictTalukPicker from '../components/DistrictTalukPicker';
@@ -242,6 +243,10 @@ export default function ProfileSetup({ navigation, route }) {
       };
 
       await createUser(uid, profile);
+
+      // Register push token + notify admin
+      registerForPushNotifications(uid);
+      notifyAdminNewUser(name.trim(), role);
 
       const full = { ...profile, id: uid };
       setAuthProfile(full);

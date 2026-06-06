@@ -23,7 +23,7 @@ import { rs, rf, H_PAD }    from '../../../utils/responsive';
 
 const AVATAR_SIZE = rs(100);
 const PHOTO_PATH  = (uid) => `profiles/${uid}/profile.jpg`;
-const SUPPORT_PHONE = '9876543210';
+const SUPPORT_PHONE = '8189880949'; // ← Change this to your real support number
 
 const KYC_CFG = {
   not_submitted: { bg: '#F3F4F6', color: '#374151', label: 'KYC Not Submitted', icon: '📋' },
@@ -290,13 +290,25 @@ export default function OwnerProfile({ navigation }) {
           <View style={s.section}>
             <Text style={s.sectionTitle}>Support</Text>
             <View style={s.supportRow}>
-              <TouchableOpacity style={s.supportBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={s.supportBtn}
+                onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`).catch(() => {})}
+                activeOpacity={0.85}
+              >
                 <Text style={s.supportIcon}>📞</Text>
                 <Text style={s.supportTxt}>Call Support</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[s.supportBtn, { borderColor: '#25D366' }]} onPress={() => Linking.openURL(`whatsapp://send?phone=91${SUPPORT_PHONE}`)} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={[s.supportBtn, s.supportBtnWA]}
+                onPress={() =>
+                  Linking.openURL(`https://wa.me/91${SUPPORT_PHONE}`).catch(() =>
+                    Linking.openURL(`whatsapp://send?phone=91${SUPPORT_PHONE}`).catch(() => {})
+                  )
+                }
+                activeOpacity={0.85}
+              >
                 <Text style={s.supportIcon}>💬</Text>
-                <Text style={[s.supportTxt, { color: '#25D366' }]}>WhatsApp</Text>
+                <Text style={[s.supportTxt, s.supportTxtWA]}>WhatsApp</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -388,8 +400,10 @@ const s = StyleSheet.create({
   sectionTitle:    { fontSize: rf(14), fontWeight: '700', color: '#374151', marginBottom: rs(10) },
   supportRow:      { flexDirection: 'row', gap: rs(10) },
   supportBtn:      { flex: 1, backgroundColor: '#fff', borderRadius: rs(12), paddingVertical: rs(14), alignItems: 'center', borderWidth: rs(1.5), borderColor: COLORS.primary, elevation: 1 },
+  supportBtnWA:    { borderColor: '#25D366' },
   supportIcon:     { fontSize: rf(22), marginBottom: rs(4) },
   supportTxt:      { fontSize: rf(13), fontWeight: '700', color: COLORS.primary },
+  supportTxtWA:    { color: '#25D366' },
   menuSectionTxt:  { paddingHorizontal: H_PAD, marginBottom: rs(8), fontSize: rf(12), fontWeight: '700', color: '#9CA3AF' },
   menuCard:        { backgroundColor: '#fff', marginHorizontal: rs(16), borderRadius: rs(16), overflow: 'hidden', elevation: 1, marginBottom: rs(12) },
   menuRow:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(16), paddingVertical: rs(14) },

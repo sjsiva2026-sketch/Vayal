@@ -12,6 +12,10 @@ import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler'
 import { doc, deleteDoc }                    from 'firebase/firestore';
 import { db }                                from '../../../firebase/config';
 import { listenBookingsByOwner, updateBooking, getUser } from '../../../firebase/firestore';
+import {
+  notifyFarmerBookingAccepted,
+  notifyFarmerBookingRejected,
+} from '../../../firebase/notifications';
 import { useUser }          from '../../../context/UserContext';
 import { getCategoryLabel } from '../../../constants/categories';
 import PhoneConnect         from '../../common/components/PhoneConnect';
@@ -252,7 +256,10 @@ export default function BookingRequests({ navigation }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Accept', onPress: async () => {
           setActioning(booking.id);
-          try { await updateBooking(booking.id, { status: 'accepted' }); }
+          try {
+            await updateBooking(booking.id, { status: 'accepted' });
+            notifyFarmerBookingAccepted(booking.farmerId, booking.machineTypeLabel || 'Machine');
+          }
           catch (e) { Alert.alert('Error', e.message); }
           finally { if (alive.current) setActioning(null); }
         },
@@ -265,7 +272,10 @@ export default function BookingRequests({ navigation }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reject', style: 'destructive', onPress: async () => {
           setActioning(booking.id);
-          try { await updateBooking(booking.id, { status: 'rejected' }); }
+          try {
+            await updateBooking(booking.id, { status: 'rejected' });
+            notifyFarmerBookingRejected(booking.farmerId, booking.machineTypeLabel || 'Machine');
+          }
           catch (e) { Alert.alert('Error', e.message); }
           finally { if (alive.current) setActioning(null); }
         },

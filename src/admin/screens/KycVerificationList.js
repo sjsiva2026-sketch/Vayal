@@ -12,6 +12,10 @@ import { useFocusEffect }                  from '@react-navigation/native';
 import { getDocs, collection, query, where } from 'firebase/firestore';
 import { db }                              from '../../../firebase/config';
 import { adminApproveKyc, adminRejectKyc } from '../../../firebase/kyc';
+import {
+  notifyOwnerKycApproved,
+  notifyOwnerKycRejected,
+} from '../../../firebase/notifications';
 import { COLORS }                          from '../../../constants/colors';
 import { rs, rf, H_PAD }                   from '../../../utils/responsive';
 import Loader                              from '../../common/components/Loader';
