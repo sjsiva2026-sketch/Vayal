@@ -8,6 +8,7 @@ import { GestureHandlerRootView }     from 'react-native-gesture-handler';
 import { SafeAreaProvider }           from 'react-native-safe-area-context';
 import * as Font                      from 'expo-font';
 import * as SplashScreen              from 'expo-splash-screen';
+import * as Notifications             from 'expo-notifications';
 
 import { AuthProvider }            from './context/AuthContext';
 import { UserProvider }            from './context/UserContext';
@@ -15,6 +16,7 @@ import { BookingProvider }         from './context/BookingContext';
 import AppNavigator                from './navigation/AppNavigator';
 import MaintenanceScreen           from './src/common/screens/MaintenanceScreen';
 import { listenMaintenanceStatus } from './firebase/firestore';
+import { setupAndroidChannel }     from './firebase/notifications';
 import { rs, rf }                  from './utils/responsive';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -27,6 +29,15 @@ const EXTRA_FONTS = {
   'MaterialIcons':          require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf'),
   'MaterialCommunityIcons': require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf'),
 };
+
+// ── Global foreground notification handler ───────────────────────────────
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge:  true,
+  }),
+});
 
 // ── Error Boundary ─────────────────────────────────────────────────────────
 class ErrorBoundary extends Component {
@@ -78,37 +89,36 @@ const ls = StyleSheet.create({
 // ── Root ───────────────────────────────────────────────────────────────────
 export default function App() {
   const [essentialReady, setEssentialReady] = useState(false);
-  const navRef = useRef(null);
+  const notifResponseSub = useRef(null);
+
+  // ── Setup Android notification channel on launch ──────────────────────
+  useEffect(() => {
+    setupAndroidChannel().catch(() => {});
+  }, []);
+
+  // ── Notification tap listener (background → foreground) ───────────────
+  // Navigation is handled inside AppNavigator via its own navRef
+  useEffect(() => {
+    notifResponseSub.current = Notifications.addNotificationResponseReceivedListener(response => {
+      // AppNavigator handles deep-navigation via its own navRef
+      // This listener ensures the app wakes up from terminated state
+    });
+    return () => notifResponseSub.current?.remove();
+  }, []);
 
   // ── Handle share intent (GPay/PhonePe/Paytm share) ────────────────────
   useEffect(() => {
-    // Handle app opened via share intent
     const handleUrl = ({ url }) => {
       if (!url) return;
       try {
         const uri = decodeURIComponent(url);
         if (uri.startsWith('content://') || uri.startsWith('file://') ||
             uri.includes('image') || uri.includes('screenshot')) {
-          // Navigate to PaymentScreenshotUpload with shared image
-          if (navRef.current?.isReady()) {
-            navRef.current.navigate('PaymentScreenshotUpload', {
-              sharedImageUri: uri,
-              ownerId:        null, // will be filled from context
-              commissionAmount: 0,
-            });
-          }
+          // AppNavigator handles navigation via its own ref
         }
       } catch {}
     };
-
-    // App already open — share received
     const sub = Linking.addEventListener('url', handleUrl);
-
-    // App opened fresh via share
-    Linking.getInitialURL().then(url => {
-      if (url) handleUrl({ url });
-    }).catch(() => {});
-
     return () => sub?.remove();
   }, []);
 

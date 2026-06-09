@@ -2,88 +2,161 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAdmin() {
-      return request.auth != null && request.auth.uid in [
-        'PASTE_ADMIN_UID_HERE'
-      ];
-    }
-    function isSignedIn() { return request.auth != null; }
-    function isSelf(uid)  { return request.auth != null && request.auth.uid == uid; }
+    // ── Helpers ──────────────────────────────────────────────────────────
 
+    // Real Firebase Phone Auth user (not anonymous)
+    function isSignedIn() {
+      return request.auth != null
+          && request.auth.token.firebase.sign_in_provider == 'phone';
+    }
+
+    // Email/password = admin path
+    function isEmailUser() {
+      return request.auth != null
+          && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    // Any authenticated user (phone or email)
+    function isAnyAuth() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Admin = email/password user whose Firestore role == 'admin'
+    // NOTE: For Firestore security rules, we trust the email provider
+    // + a get() check on the users doc for the role field.
+    function isAdmin() {
+      return isEmailUser()
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Fields that only admin may set/change
     function touchesAdminFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'paymentStatus','isLocked','kycStatus',
-        'isVerified','accessGranted','adminVerified'
+        'paymentStatus', 'isLocked', 'kycStatus',
+        'isVerified', 'accessGranted', 'adminVerified',
+        'isBlocked', 'role'
       ]);
     }
 
-    // ── USERS ──────────────────────────────────────────────────────────────
+    // ── USERS ─────────────────────────────────────────────────────────────
     match /users/{uid} {
+      // Owner/farmer can read their own doc; admin can read any
       allow read:   if isSelf(uid) || isAdmin();
-      allow create: if isSelf(uid) && isSignedIn();
-      allow update: if isAdmin() || (isSelf(uid) && !touchesAdminFields());
+
+      // New user registers right after OTP verify
+      allow create: if isSelf(uid) && isAnyAuth()
+                    && !('role' in request.resource.data
+                         ? request.resource.data.role == 'admin'
+                         : false);
+
+      // User can update their own non-admin fields; admin can update anything
+      allow update: if isAdmin()
+                    || (isSelf(uid) && isSignedIn() && !touchesAdminFields());
+
       allow delete: if isAdmin();
     }
 
-    // ── BOOKINGS ───────────────────────────────────────────────────────────
-    match /bookings/{id} {
-      allow read:   if isSignedIn();
-      allow create: if isSignedIn()
-        && request.resource.data.farmerId == request.auth.uid;
-      allow update: if isAdmin()
-        || (isSignedIn()
-          && (resource.data.ownerId  == request.auth.uid
-           || resource.data.farmerId == request.auth.uid)
-          && !touchesAdminFields());
-      allow delete: if isAdmin()
-        || (isSignedIn()
-          && (resource.data.ownerId  == request.auth.uid
-           || resource.data.farmerId == request.auth.uid)
-          && resource.data.status != 'completed'
-          && resource.data.paymentStatus != 'paid');
-    }
-
-    // ── MACHINES ───────────────────────────────────────────────────────────
+    // ── MACHINES ──────────────────────────────────────────────────────────
     match /machines/{id} {
-      allow read:          if isSignedIn();
+      allow read:          if isAnyAuth();
       allow create:        if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid;
-      allow update,delete: if isAdmin()
-        || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+                           && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isAdmin()
+                            || (isSignedIn()
+                                && resource.data.ownerId == request.auth.uid);
     }
 
-    // ── COMMISSION PAYMENTS ────────────────────────────────────────────────
+    // ── BOOKINGS ──────────────────────────────────────────────────────────
+    match /bookings/{id} {
+      allow read:   if isAnyAuth();
+
+      allow create: if isSignedIn()
+                    && request.resource.data.farmerId == request.auth.uid;
+
+      allow update: if isAdmin()
+                    || (isSignedIn()
+                        && (resource.data.ownerId  == request.auth.uid
+                         || resource.data.farmerId == request.auth.uid)
+                        && !touchesAdminFields());
+
+      allow delete: if isAdmin()
+                    || (isSignedIn()
+                        && (resource.data.ownerId  == request.auth.uid
+                         || resource.data.farmerId == request.auth.uid)
+                        && resource.data.status != 'completed'
+                        && resource.data.paymentStatus != 'paid');
+    }
+
+    // ── COMMISSION PAYMENTS ───────────────────────────────────────────────
     match /commissionPayments/{id} {
       allow read: if isAdmin()
-        || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+                  || (isSignedIn()
+                      && resource.data.ownerId == request.auth.uid);
+
       allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.paymentStatus == 'pending_verification'
-        && !('adminVerified' in request.resource.data);
+                    && request.resource.data.ownerId == request.auth.uid
+                    && request.resource.data.paymentStatus == 'pending_verification'
+                    && !('adminVerified' in request.resource.data);
+
       allow update: if isAdmin()
-        || (isSignedIn()
-          && resource.data.ownerId == request.auth.uid
-          && !touchesAdminFields());
+                    || (isSignedIn()
+                        && resource.data.ownerId == request.auth.uid
+                        && !touchesAdminFields());
+
       allow delete: if isAdmin();
     }
 
-    // ── RATINGS ────────────────────────────────────────────────────────────
+    // ── RATINGS ───────────────────────────────────────────────────────────
     match /ratings/{id} {
-      allow read:          if isSignedIn();
+      allow read:          if isAnyAuth();
       allow create:        if isSignedIn()
-        && request.resource.data.farmerId == request.auth.uid;
-      allow update,delete: if isAdmin();
+                           && request.resource.data.farmerId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
-    // ── MISC ───────────────────────────────────────────────────────────────
-    match /otpSessions/{id}           { allow read, write: if isSignedIn(); }
-    match /appConfig/{id}             { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /appAccount/{id}            { allow read: if isAdmin(); allow create: if isSignedIn(); allow update,delete: if isAdmin(); }
-    match /appAccountSummary/{id}     { allow read: if isAdmin(); allow write: if isSignedIn(); }
-    match /dailyPayments/{id}         { allow read, write: if isSignedIn(); }
-    match /pendingVerifications/{id}  { allow read, write: if isSignedIn(); }
-    match /upiTransactions/{id}       { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    // ── APP CONFIG (maintenance, app settings) ────────────────────────────
+    match /appConfig/{id} {
+      allow read:  if isAnyAuth();
+      allow write: if isAdmin();
+    }
 
-    match /{document=**} { allow read, write: if false; }
+    // ── APP ACCOUNT (commission ledger) ───────────────────────────────────
+    match /appAccount/{id} {
+      allow read:          if isAdmin();
+      allow create:        if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /appAccountSummary/{id} {
+      allow read:  if isAdmin();
+      allow write: if isSignedIn();
+    }
+
+    // ── DAILY PAYMENTS ────────────────────────────────────────────────────
+    match /dailyPayments/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ── PENDING VERIFICATIONS ─────────────────────────────────────────────
+    match /pendingVerifications/{id} {
+      allow read:  if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // ── UPI TRANSACTIONS ──────────────────────────────────────────────────
+    match /upiTransactions/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── DENY EVERYTHING ELSE ──────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

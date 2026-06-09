@@ -1,14 +1,15 @@
 import { sendOTP, verifyOTP, logout, onAuthChange } from '../firebase/auth';
-import { createUser, getUser, updateUser }           from '../firebase/firestore';
+import { createUser, getUser, updateUser }          from '../firebase/firestore';
 
 export const authService = {
 
-  // Send OTP — recaptchaVerifier is a ref from FirebaseRecaptchaVerifierModal
+  // Send real OTP via Firebase Phone Auth
+  // recaptchaVerifier: ref from FirebaseRecaptchaVerifierModal in LoginScreen
   sendOTP: async (phone, recaptchaVerifier) => {
     return await sendOTP(`+91${phone}`, recaptchaVerifier);
   },
 
-  // Verify OTP code and return firebase user
+  // Verify OTP code entered by user — Firebase confirms against real SMS
   verifyOTP: async (otp) => {
     return await verifyOTP(otp);
   },
@@ -34,9 +35,9 @@ export const authService = {
   // Update profile fields
   updateProfile: async (uid, data) => await updateUser(uid, data),
 
-  // Logout current user
+  // Logout current user — clears Firebase Auth session + AsyncStorage
   logout,
 
-  // Listen to auth state changes (call in AuthContext)
+  // Listen to Firebase Auth state changes (used in AuthContext)
   onAuthChange,
 };

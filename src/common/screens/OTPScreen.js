@@ -1,65 +1,58 @@
 // src/common/screens/OTPScreen.js
-// FIXED: KYC check after OTP verify
+// Production OTP verification via Firebase Phone Auth
 //
 // FLOW:
 //   Farmer → FarmerHome (direct)
 //   Admin  → AdminDashboard (direct)
 //   Owner  (new user)     → ProfileSetup
-//   Owner  (not verified) → KycScreen  ← FIX
+//   Owner  (not verified) → KycScreen
 //   Owner  (verified)     → OwnerHome
 
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
   TextInput, StatusBar, ActivityIndicator, Keyboard,
-  KeyboardAvoidingView, ScrollView, Platform, Dimensions, Image,
+  KeyboardAvoidingView, ScrollView, Dimensions, Image,
 } from 'react-native';
-import { CommonActions }  from '@react-navigation/native';
-import { verifyOTP }      from '../../../firebase/auth';
-import { getUser }        from '../../../firebase/firestore';
-import { useAuth }        from '../../../context/AuthContext';
-import { useUser }        from '../../../context/UserContext';
-import { FIcon }          from '../../../utils/icons';
-import { ICONS }          from '../../../assets/index';
-import { IMG }            from '../../../utils/imageSize';
+import { CommonActions } from '@react-navigation/native';
+import { verifyOTP }     from '../../../firebase/auth';
+import { getUser }       from '../../../firebase/firestore';
+import { useAuth }       from '../../../context/AuthContext';
+import { useUser }       from '../../../context/UserContext';
+import { FIcon }         from '../../../utils/icons';
+import { ICONS }         from '../../../assets/index';
+import { IMG }           from '../../../utils/imageSize';
 
-const PRIMARY = '#1C7C54';
+const PRIMARY     = '#1C7C54';
 const { width: W } = Dimensions.get('window');
-const rf = (dp) => Math.round((W / 375) * dp);
+const rf   = (dp) => Math.round((W / 375) * dp);
 const BOX_W = Math.floor((W - 48 - 40) / 6);
 const BOX_H = BOX_W + 10;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NAVIGATION DECISION — called after Firestore profile loaded
-// This is the ONLY place that decides where owner goes
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Navigation destination based on role + KYC status ────────────────────
 function getDestination(profile) {
   const role = profile?.role;
-
   if (role === 'farmer') return 'FarmerHome';
   if (role === 'admin')  return 'AdminDashboard';
-
   if (role === 'owner') {
-    // Owner MUST be verified by admin before accessing OwnerHome
     const verified = profile.isVerified === true
                   && profile.kycStatus   === 'verified';
     return verified ? 'OwnerHome' : 'KycScreen';
   }
-
   return 'RoleSelect';
 }
 
 export default function OTPScreen({ navigation, route }) {
-  const { phone, role, devOTP }                     = route.params || {};
+  const { phone, role } = route.params || {};
   const { setUser, setUserProfile: setAuthProfile } = useAuth();
-  const { setUserProfile }                          = useUser();
+  const { setUserProfile } = useUser();
 
   const [otp,     setOtp]     = useState('');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
-  const [timer,   setTimer]   = useState(60);
-  const inputRef  = useRef(null);
-  const busyRef   = useRef(false);
+  const [timer,   setTimer]   = useState(30);
+  const inputRef = useRef(null);
+  const busyRef  = useRef(false);
 
   React.useEffect(() => {
     if (timer <= 0) return;
@@ -84,24 +77,22 @@ export default function OTPScreen({ navigation, route }) {
     try {
       const authUser = await verifyOTP(clean);
 
-      // Always fetch fresh profile from Firestore
+      // Fetch fresh profile from Firestore
       const profile = await getUser(authUser.uid);
 
       if (profile) {
-        // Check if user is blocked
         if (profile.isBlocked === true) {
-          setError('Your account has been blocked by admin. Contact support.');
+          setError('Your account has been blocked. Please contact support.');
           setLoading(false);
           busyRef.current = false;
           return;
         }
-        // Existing user → set context → route by role + KYC status
         setUser(authUser);
         setAuthProfile(profile);
         setUserProfile(profile);
         goTo(getDestination(profile));
       } else {
-        // Brand new user → ProfileSetup
+        // New user — go to profile setup
         setUser(authUser);
         navigation.navigate('ProfileSetup', {
           uid:   authUser.uid,
@@ -112,8 +103,10 @@ export default function OTPScreen({ navigation, route }) {
     } catch (e) {
       const msg = (e?.message || '').toLowerCase();
       let errMsg = 'Verification failed. Try again.';
-      if (msg.includes('invalid') || msg.includes('wrong') || msg.includes('expired')) {
-        errMsg = 'Wrong or expired OTP. Try again.';
+      if (msg.includes('invalid') || msg.includes('wrong') || msg.includes('expired') || msg.includes('incorrect')) {
+        errMsg = 'Invalid or expired OTP. Please check and try again.';
+      } else if (msg.includes('session expired') || msg.includes('no otp session')) {
+        errMsg = 'OTP session expired. Please go back and request a new OTP.';
       } else if (msg.includes('network') || msg.includes('offline') || msg.includes('unavailable')) {
         errMsg = 'No internet connection. Check and retry.';
       } else if (msg.includes('too-many') || msg.includes('too many')) {
@@ -142,10 +135,7 @@ export default function OTPScreen({ navigation, route }) {
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <KeyboardAvoidingView
-        style={s.kav}
-        behavior="height"
-      >
+      <KeyboardAvoidingView style={s.kav} behavior="height">
         <ScrollView
           contentContainerStyle={s.scroll}
           keyboardShouldPersistTaps="handled"
@@ -178,7 +168,7 @@ export default function OTPScreen({ navigation, route }) {
               <Text style={s.phoneTxt}>📱 +91 {phone}</Text>
             </View>
             <Text style={s.subtitle}>
-              Enter the 6-digit code sent to your number
+              Enter the 6-digit code sent to your number via SMS
             </Text>
           </View>
 
@@ -186,21 +176,12 @@ export default function OTPScreen({ navigation, route }) {
           <View style={s.card}>
             <View style={s.handle} />
 
-            {/* Dev OTP display */}
-            {devOTP ? (
-              <View style={s.devBox}>
-                <Text style={s.devTitle}>🔑 Your OTP Code</Text>
-                <Text style={s.devCode}>{devOTP}</Text>
-                <Text style={s.devHint}>Enter the digits in the boxes below</Text>
-              </View>
-            ) : null}
-
             <Text style={s.fieldLabel}>Enter 6-digit OTP</Text>
 
             {/* Visual OTP boxes + hidden real input */}
             <View style={[s.otpContainer, { height: BOX_H }]}>
               <View style={s.boxRow} pointerEvents="none">
-                {[0,1,2,3,4,5].map(i => (
+                {[0, 1, 2, 3, 4, 5].map(i => (
                   <View key={i} style={[
                     s.box, { width: BOX_W, height: BOX_H },
                     otp.length === i && !loading && s.boxActive,
@@ -233,7 +214,7 @@ export default function OTPScreen({ navigation, route }) {
 
             {error
               ? <View style={s.errorBox}><Text style={s.errorTxt}>⚠️  {error}</Text></View>
-              : <Text style={s.hint}>Auto-verifies when all 6 digits entered</Text>
+              : <Text style={s.hint}>Auto-verifies when all 6 digits are entered</Text>
             }
 
             <TouchableOpacity
@@ -280,10 +261,6 @@ const s = StyleSheet.create({
   subtitle:     { fontSize: rf(12), color: '#9CA3AF', textAlign: 'center' },
   card:         { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
   handle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 18 },
-  devBox:       { backgroundColor: '#E8F5EE', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#6EE7B7', marginBottom: 18, alignItems: 'center' },
-  devTitle:     { fontSize: rf(12), fontWeight: '700', color: '#065F46', marginBottom: 4 },
-  devCode:      { fontSize: rf(28), fontWeight: '900', color: PRIMARY, letterSpacing: 8 },
-  devHint:      { fontSize: rf(11), color: '#6B7280', marginTop: 2 },
   fieldLabel:   { fontSize: rf(14), fontWeight: '700', color: '#374151', marginBottom: 16 },
   otpContainer: { width: '100%', marginBottom: 12, position: 'relative' },
   boxRow:       { flexDirection: 'row', justifyContent: 'space-between', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },

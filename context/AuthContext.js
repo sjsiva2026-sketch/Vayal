@@ -1,5 +1,6 @@
 // context/AuthContext.js
 // Handles both phone OTP (farmer/owner) and email/password (admin) sessions
+// Auth persistence: Firebase Auth + AsyncStorage — no re-OTP on app restart
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,12 +19,53 @@ export const AuthProvider = ({ children }) => {
   const [loading,     setLoading]     = useState(true);
 
   useEffect(() => {
-    let alive    = true;
-    let unsubFB  = null;
+    let alive   = true;
+    let unsubFB = null;
 
-    (async () => {
+    const auth = getFirebaseAuth();
+
+    // Primary: listen to Firebase Auth state changes
+    // This covers both phone-auth users and admin email/password users
+    // Firebase Auth + AsyncStorage persistence means the user stays logged in
+    // across app restarts until explicit logout or token expiry
+    unsubFB = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!alive) return;
+
+      if (firebaseUser) {
+        // Firebase has a valid authenticated session
+        const uid   = firebaseUser.uid;
+        const phone = firebaseUser.phoneNumber || null;
+        const email = firebaseUser.email || null;
+
+        setUser({ uid, phoneNumber: phone, email });
+
+        // Fetch profile from Firestore (with timeout fallback)
+        const profile = await Promise.race([
+          getUser(uid),
+          new Promise(r => setTimeout(() => r(null), 5000)),
+        ]).catch(() => null);
+
+        if (alive && profile) {
+          setUserProfile({
+            ...profile,
+            id:               uid,
+            otpVerifiedAt:    profile.otpVerifiedAt    ?? null,
+            paymentDeadline:  profile.paymentDeadline  ?? null,
+            commissionAmount: profile.commissionAmount ?? 0,
+            paymentStatus:    profile.paymentStatus    ?? 'none',
+            isLocked:         profile.isLocked         ?? false,
+            kycStatus:        profile.kycStatus        ?? 'not_submitted',
+            accessGranted:    profile.accessGranted    ?? false,
+          });
+        }
+
+        if (alive) setLoading(false);
+        return;
+      }
+
+      // No Firebase Auth session — check legacy AsyncStorage session
+      // (for backwards compatibility with existing installs before this update)
       try {
-        // ── Step 1: Check phone-based session (farmer/owner) ────────────────
         const [[, uid], [, phone]] = await AsyncStorage.multiGet([KEY_UID, KEY_PHONE]);
 
         if (uid && alive) {
@@ -36,6 +78,7 @@ export const AuthProvider = ({ children }) => {
           if (alive && profile) {
             setUserProfile({
               ...profile,
+              id:               uid,
               otpVerifiedAt:    profile.otpVerifiedAt    ?? null,
               paymentDeadline:  profile.paymentDeadline  ?? null,
               commissionAmount: profile.commissionAmount ?? 0,
@@ -45,29 +88,14 @@ export const AuthProvider = ({ children }) => {
               accessGranted:    profile.accessGranted    ?? false,
             });
           }
-          if (alive) setLoading(false);
-          return;
+
+          // Clear legacy storage — Firebase Auth will handle persistence going forward
+          AsyncStorage.multiRemove([KEY_UID, KEY_PHONE]).catch(() => {});
         }
+      } catch {}
 
-        // ── Step 2: Check Firebase Auth session (admin email/password) ──────
-        const auth = getFirebaseAuth();
-        unsubFB = onAuthStateChanged(auth, async (firebaseUser) => {
-          if (!alive) return;
-          if (firebaseUser) {
-            setUser({ uid: firebaseUser.uid, email: firebaseUser.email });
-            const profile = await getUser(firebaseUser.uid).catch(() => null);
-            if (alive && profile?.role === 'admin') {
-              setUserProfile({ ...profile, id: firebaseUser.uid });
-            }
-          }
-          if (alive) setLoading(false);
-        });
-
-      } catch (e) {
-        console.warn('[Auth] bootstrap:', e.message);
-        if (alive) setLoading(false);
-      }
-    })();
+      if (alive) setLoading(false);
+    });
 
     return () => {
       alive = false;

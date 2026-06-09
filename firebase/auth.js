@@ -1,73 +1,129 @@
 // firebase/auth.js
-// Custom OTP + Anonymous Firebase Auth
-// Anonymous sign-in → request.auth != null → Firestore rules pass
+// Production Firebase Phone Authentication (Real OTP via SMS)
+// Uses Firebase Auth signInWithPhoneNumber — real OTP sent to user's phone
 
-import { signOut, signInAnonymously } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  signInWithPhoneNumber,
+  signOut,
+  onAuthStateChanged,
+  PhoneAuthProvider,
+  signInWithCredential,
+} from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getFirebaseAuth, db } from './config';
+import { getFirebaseAuth } from './config';
 
 const KEY_UID   = '@vayal_uid';
 const KEY_PHONE = '@vayal_phone';
 
-let _otp    = null;
-let _phone  = null;
-let _expiry = null;
+// Holds the Firebase confirmation result between sendOTP and verifyOTP
+let _confirmationResult = null;
 
-const makeOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
+// ── Send OTP via Firebase Phone Auth ─────────────────────────────────────
+// phoneNumber must be in E.164 format, e.g. +919876543210
+// recaptchaVerifier is a FirebaseRecaptchaVerifierModal ref (from expo-firebase-recaptcha)
+export const sendOTP = async (phoneNumber, recaptchaVerifier) => {
+  const auth = getFirebaseAuth();
 
-export const sendOTP = async (phoneNumber) => {
-  _phone  = phoneNumber;
-  _otp    = makeOTP();
-  _expiry = Date.now() + 10 * 60 * 1000; // 10 min
-
-  // Save OTP in Firestore (non-blocking, best-effort)
-  setDoc(doc(db, 'otpSessions', phoneNumber.replace(/\+/g, '')), {
-    otp: _otp, phone: phoneNumber,
-    expiresAt: _expiry, createdAt: serverTimestamp(),
-  }).catch(() => {});
-
-  // OTP visible in Metro terminal during development
-  console.log('\n==========================');
-  console.log('📱 OTP:', _otp, '| Phone:', phoneNumber);
-  console.log('==========================\n');
-
-  return { otp: _otp };
-};
-
-export const verifyOTP = async (inputOTP) => {
-  if (!_phone || !_otp)         throw new Error('No OTP session. Tap Get OTP again.');
-  if (Date.now() > _expiry)     throw new Error('OTP expired. Request a new one.');
-  if (inputOTP.trim() !== _otp) throw new Error('Wrong OTP. Try again.');
-
-  const phone = _phone;
-  // Stable UID: same phone always same UID
-  const uid   = 'p' + phone.replace(/\D/g, '');
-
-  // Sign in anonymously → request.auth != null in Firestore rules
-  try {
-    const auth = getFirebaseAuth();
-    await signInAnonymously(auth);
-  } catch (e) {
-    console.warn('[Auth] Anonymous sign-in failed:', e.code, e.message);
-    // If anonymous auth disabled → use open Firestore rules (allow read, write: if true)
+  if (!recaptchaVerifier) {
+    throw new Error('reCAPTCHA verifier is required for phone authentication.');
   }
 
-  await AsyncStorage.multiSet([[KEY_UID, uid], [KEY_PHONE, phone]]);
-  _otp = _phone = _expiry = null;
-
-  return { uid, phoneNumber: phone };
+  try {
+    _confirmationResult = await signInWithPhoneNumber(
+      auth,
+      phoneNumber,
+      recaptchaVerifier
+    );
+    return { success: true };
+  } catch (e) {
+    _confirmationResult = null;
+    // Normalize Firebase error codes to readable messages
+    const code = e?.code || '';
+    if (code === 'auth/invalid-phone-number') {
+      throw new Error('Invalid phone number. Please check and try again.');
+    } else if (code === 'auth/too-many-requests') {
+      throw new Error('Too many OTP requests. Please wait a few minutes and try again.');
+    } else if (code === 'auth/quota-exceeded') {
+      throw new Error('SMS quota exceeded. Please try again later.');
+    } else if (code === 'auth/network-request-failed') {
+      throw new Error('Network error. Check your internet connection and try again.');
+    } else if (code === 'auth/captcha-check-failed') {
+      throw new Error('reCAPTCHA verification failed. Please try again.');
+    } else {
+      throw new Error(e.message || 'Failed to send OTP. Please try again.');
+    }
+  }
 };
 
+// ── Verify OTP entered by user ────────────────────────────────────────────
+export const verifyOTP = async (inputOTP) => {
+  if (!_confirmationResult) {
+    throw new Error('No OTP session found. Please request a new OTP.');
+  }
+
+  const trimmed = inputOTP.trim();
+  if (!trimmed || trimmed.length !== 6) {
+    throw new Error('Please enter the 6-digit OTP.');
+  }
+
+  try {
+    const result = await _confirmationResult.confirm(trimmed);
+    const firebaseUser = result.user;
+    _confirmationResult = null;
+
+    const uid   = firebaseUser.uid;
+    const phone = firebaseUser.phoneNumber;
+
+    // Persist session in AsyncStorage for app restart recovery
+    await AsyncStorage.multiSet([
+      [KEY_UID,   uid],
+      [KEY_PHONE, phone],
+    ]);
+
+    return { uid, phoneNumber: phone };
+  } catch (e) {
+    const code = e?.code || '';
+    if (
+      code === 'auth/invalid-verification-code' ||
+      code === 'auth/code-expired'
+    ) {
+      throw new Error('Invalid or expired OTP. Please check the code and try again.');
+    } else if (code === 'auth/session-expired') {
+      _confirmationResult = null;
+      throw new Error('OTP session expired. Please request a new OTP.');
+    } else if (code === 'auth/too-many-requests') {
+      throw new Error('Too many attempts. Please wait a few minutes and try again.');
+    } else if (code === 'auth/network-request-failed') {
+      throw new Error('Network error. Check your internet connection and try again.');
+    } else {
+      throw new Error(e.message || 'OTP verification failed. Please try again.');
+    }
+  }
+};
+
+// ── Logout ────────────────────────────────────────────────────────────────
 export const logout = async () => {
-  _otp = _phone = _expiry = null;
-  await AsyncStorage.multiRemove([KEY_UID, KEY_PHONE]);
-  try { await signOut(getFirebaseAuth()); } catch {}
+  _confirmationResult = null;
+  try {
+    await AsyncStorage.multiRemove([KEY_UID, KEY_PHONE]);
+  } catch {}
+  try {
+    await signOut(getFirebaseAuth());
+  } catch {}
 };
 
+// ── Restore session from AsyncStorage (used in AuthContext bootstrap) ─────
 export const getStoredUser = async () => {
   try {
     const [[, uid], [, phone]] = await AsyncStorage.multiGet([KEY_UID, KEY_PHONE]);
     return uid ? { uid, phoneNumber: phone } : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
+};
+
+// ── Listen to Firebase Auth state changes ────────────────────────────────
+export const onAuthChange = (callback) => {
+  const auth = getFirebaseAuth();
+  return onAuthStateChanged(auth, callback);
 };

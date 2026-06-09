@@ -2,47 +2,60 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
     function isAdmin() {
       return request.auth != null
-        && request.auth.uid in ['PASTE_ADMIN_UID_HERE'];
+          && request.auth.token.firebase.sign_in_provider == 'password';
     }
-    function isSignedIn() { return request.auth != null; }
+
+    // Max 5 MB, must be an image MIME type
     function isValidImage() {
       return request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+          && request.resource.contentType.matches('image/.*');
     }
 
-    // KYC documents: profile, license, aadhar, vehicle
+    // ── KYC documents ─────────────────────────────────────────────────────
+    // Path: kyc/{ownerId}/{filename}
     match /kyc/{ownerId}/{filename} {
-      allow write:  if isSignedIn()
-        && request.auth.uid == ownerId && isValidImage();
-      allow read:   if isSignedIn()
-        && (request.auth.uid == ownerId || isAdmin());
+      allow write:  if isSelf(ownerId) && isValidImage();
+      allow read:   if isSelf(ownerId) || isAdmin();
       allow delete: if isAdmin();
     }
 
-    // Payment screenshots
+    // ── Commission payment screenshots ────────────────────────────────────
+    // Path: payments/{ownerId}/{filename}
     match /payments/{ownerId}/{filename} {
-      allow write:  if isSignedIn()
-        && request.auth.uid == ownerId && isValidImage();
-      allow read:   if isSignedIn()
-        && (request.auth.uid == ownerId || isAdmin());
+      allow write:  if isSelf(ownerId) && isValidImage();
+      allow read:   if isSelf(ownerId) || isAdmin();
       allow delete: if isAdmin();
     }
 
-    // Profile photos
+    // ── Profile photos ────────────────────────────────────────────────────
+    // Path: profiles/{userId}/{filename}
     match /profiles/{userId}/{filename} {
-      allow write:  if isSignedIn()
-        && request.auth.uid == userId && isValidImage();
+      allow write:  if isSelf(userId) && isValidImage();
       allow read:   if isSignedIn();
-      allow delete: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isSelf(userId) || isAdmin();
     }
 
+    // Legacy flat profile photos (no sub-folder)
     match /profilePhotos/{filename} {
       allow write: if isSignedIn() && isValidImage();
       allow read:  if isSignedIn();
     }
 
-    match /{allPaths=**} { allow read, write: if false; }
+    // ── Deny everything else ──────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
   }
 }

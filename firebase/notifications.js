@@ -1,34 +1,128 @@
 // firebase/notifications.js
-// Push via Expo Push API — no expo-notifications SDK required
-// Token save to Firestore manually
+// Push notifications via Expo Notifications SDK + FCM
+// Handles token registration, foreground/background/terminated states
+// Updated: reads projectId from Constants (canonical SDK 52 pattern)
 
-import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import * as Notifications from 'expo-notifications';
+import * as Device        from 'expo-device';
+import Constants          from 'expo-constants';
+import { Platform }       from 'react-native';
+import {
+  doc, updateDoc, getDoc, collection, query, where, getDocs,
+} from 'firebase/firestore';
 import { db } from './config';
 
-// ── Register: called after login ──────────────────────────────────────────
-// expo-notifications not used — token saved via device info
+// ── Foreground notification behaviour ────────────────────────────────────
+// Show notification banner + sound even when app is open
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge:  true,
+  }),
+});
+
+// ── Android notification channel ─────────────────────────────────────────
+export async function setupAndroidChannel() {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync('vayal-default', {
+    name:             'Vayal Notifications',
+    importance:       Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor:       '#1C7C54',
+    sound:            'default',
+    enableVibrate:    true,
+    showBadge:        true,
+  });
+}
+
+// ── Request permission + get Expo Push Token ─────────────────────────────
 export async function registerForPushNotifications(userId) {
-  // Placeholder — token will be registered when expo-notifications
-  // is added in a future build. Firestore field: expoPushToken
-  return null;
+  try {
+    if (!Device.isDevice) {
+      console.warn('[Notifications] Push notifications only work on physical devices.');
+      return null;
+    }
+
+    await setupAndroidChannel();
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      console.warn('[Notifications] Permission denied by user.');
+      return null;
+    }
+
+    // Read projectId from Constants — canonical approach for Expo SDK 52
+    // Falls back to hardcoded value if Constants not yet populated
+    const projectId =
+      Constants?.expoConfig?.extra?.eas?.projectId ??
+      Constants?.easConfig?.projectId ??
+      '6b073f71-f2fe-4f59-ab5c-44984f7643e8';
+
+    if (!projectId) {
+      console.warn('[Notifications] No EAS project ID found.');
+      return null;
+    }
+
+    // Get Expo push token (backed by FCM on Android via google-services.json)
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    const token = tokenData.data;
+    if (!token) return null;
+
+    // Persist token + refresh timestamp to Firestore user document
+    if (userId) {
+      await updateDoc(doc(db, 'users', userId), {
+        expoPushToken:    token,
+        pushPlatform:     Platform.OS,
+        pushTokenUpdated: new Date().toISOString(),
+      }).catch(e => console.warn('[Notifications] Token save failed:', e.message));
+    }
+
+    return token;
+  } catch (e) {
+    console.warn('[Notifications] registerForPushNotifications error:', e.message);
+    return null;
+  }
 }
 
 // ── Internal: send push via Expo Push API ────────────────────────────────
 async function sendPush(token, title, body, data = {}) {
+  if (!token) return;
   try {
-    await fetch('https://exp.host/--/api/v2/push/send', {
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type':    'application/json',
+        'Accept':          'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+      },
       body: JSON.stringify({
-        to:       token,
+        to:         token,
         title,
         body,
         data,
-        sound:    'default',
-        priority: 'high',
+        sound:      'default',
+        priority:   'high',
+        channelId:  'vayal-default',
+        badge:       1,
+        ttl:         3600,
+        expiration:  Math.floor(Date.now() / 1000) + 3600,
       }),
     });
-  } catch {}
+    const json = await response.json();
+    if (json?.data?.status === 'error') {
+      console.warn('[Notifications] Push failed:', json.data.message);
+    }
+  } catch (e) {
+    console.warn('[Notifications] sendPush error:', e.message);
+  }
 }
 
 async function pushToUser(userId, title, body, data = {}) {
@@ -36,17 +130,23 @@ async function pushToUser(userId, title, body, data = {}) {
     const snap  = await getDoc(doc(db, 'users', userId));
     const token = snap.data()?.expoPushToken;
     if (token) await sendPush(token, title, body, data);
-  } catch {}
+  } catch (e) {
+    console.warn('[Notifications] pushToUser error:', e.message);
+  }
 }
 
 async function pushToAdmin(title, body, data = {}) {
   try {
-    const snap = await getDocs(query(collection(db,'users'), where('role','==','admin')));
+    const snap = await getDocs(
+      query(collection(db, 'users'), where('role', '==', 'admin'))
+    );
     await Promise.all(snap.docs.map(async d => {
       const token = d.data()?.expoPushToken;
       if (token) await sendPush(token, title, body, data);
     }));
-  } catch {}
+  } catch (e) {
+    console.warn('[Notifications] pushToAdmin error:', e.message);
+  }
 }
 
 // ── FARMER ────────────────────────────────────────────────────────────────

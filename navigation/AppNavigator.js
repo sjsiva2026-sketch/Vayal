@@ -1,15 +1,17 @@
-// navigation/AppNavigator.js — PaymentScreenshotUpload screen added
+// navigation/AppNavigator.js
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Image, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
 import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Notifications from 'expo-notifications';
 import { FIcon }          from '../utils/icons';
 import { useAuth }        from '../context/AuthContext';
 import { useUser }        from '../context/UserContext';
 import { checkTimeLock, listenOwnerLockState, computeLockState } from '../firebase/commission';
 import { listenKycStatus }  from '../firebase/kyc';
+import { registerForPushNotifications } from '../firebase/notifications';
 import { COLORS } from '../constants/colors';
 import { ROLES }  from '../constants/roles';
 import { ICONS }  from '../assets/index';
@@ -119,14 +121,37 @@ export default function AppNavigator() {
   const navRef       = useNavigationContainerRef();
   const lockTimerRef = useRef(null);
   const kycPassedRef = useRef(false);
+  const pushRegRef   = useRef(false); // prevent duplicate push registration
   const [ready, setReady] = useState(false);
 
   useEffect(() => { const t = setTimeout(() => setReady(true), 5000); return () => clearTimeout(t); }, []);
   useEffect(() => { if (authProfile && !ctxProfile) setUserProfile(authProfile); }, [authProfile, ctxProfile]);
 
   const profile = ctxProfile || authProfile;
-  const uid     = profile?.id;
+  const uid     = profile?.id || user?.uid;
   const role    = profile?.role;
+
+  // ── Register push notifications once user is authenticated ─────────────
+  useEffect(() => {
+    if (!uid || pushRegRef.current) return;
+    pushRegRef.current = true;
+    registerForPushNotifications(uid).catch(() => {});
+  }, [uid]);
+
+  // ── Handle notification tap for in-app navigation ────────────────────
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const screen = response.notification.request.content.data?.screen;
+      if (!screen) return;
+      // Delay to ensure navigator is mounted
+      setTimeout(() => {
+        if (navRef.isReady()) {
+          try { navRef.navigate(screen); } catch {}
+        }
+      }, 500);
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => { kycPassedRef.current = ownerKycPassed(profile); }, [profile?.isVerified, profile?.kycStatus, profile?.accessGranted]);
 
