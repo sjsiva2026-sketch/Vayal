@@ -6,39 +6,41 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#1C7C54",
-
+    "scheme": "nammavayal",
     "splash": {
       "image": "./assets/icons/logo.jpg",
       "resizeMode": "contain",
       "backgroundColor": "#1C7C54"
     },
-
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.vayal.app"
+      "bundleIdentifier": "com.vayal.app",
+      "buildNumber": "1"
     },
-
     "android": {
       "package": "com.vayal.app",
-      "versionCode": 15,
+      "versionCode": 14,
+      "compileSdkVersion": 35,
+      "targetSdkVersion": 35,
+      "minSdkVersion": 24,
       "googleServicesFile": "./google-services.json",
-
       "adaptiveIcon": {
         "foregroundImage": "./assets/icons/logo.jpg",
         "backgroundColor": "#1C7C54"
       },
-
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.READ_MEDIA_IMAGES",
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
         "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.QUERY_ALL_PACKAGES",
+        "com.google.android.gms.permission.AD_ID",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.SCHEDULE_EXACT_ALARM"
       ],
-
       "intentFilters": [
         {
           "action": "VIEW",
@@ -46,6 +48,11 @@
           "data": [
             {
               "scheme": "nammavayal"
+            },
+            {
+              "scheme": "https",
+              "host": "*.vayal.app",
+              "pathPrefix": "/"
             }
           ],
           "category": [
@@ -70,21 +77,18 @@
             }
           ]
         }
-      ]
+      ],
+      "usesCleartextTraffic": false,
+      "allowBackup": true
     },
-
-    "scheme": "nammavayal",
-
     "notification": {
       "icon": "./assets/icons/logo.jpg",
       "color": "#1C7C54",
       "androidMode": "default",
       "androidCollapsedTitle": "Namma Vayal"
     },
-
     "plugins": [
       "expo-font",
-      "expo-media-library",
       [
         "expo-notifications",
         {
@@ -101,7 +105,12 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
-            "minSdkVersion": 24
+            "minSdkVersion": 24,
+            "enableProguardInReleaseBuilds": true,
+            "usesCleartextTraffic": false,
+            "allowBackup": true,
+            "kotlinVersion": "1.9.0",
+            "gradlePluginVersion": "8.3.0"
           }
         }
       ],
@@ -113,9 +122,7 @@
         }
       ]
     ],
-
     "owner": "gunasekar22it241",
-
     "extra": {
       "eas": {
         "projectId": "6b073f71-f2fe-4f59-ab5c-44984f7643e8"
