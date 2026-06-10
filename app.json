@@ -2,13 +2,13 @@
   "expo": {
     "name": "Namma Vayal",
     "slug": "namma-vayal",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#1C7C54",
 
     "splash": {
-      "image": "./assets/icons/logo.jpg",
+      "image": "./assets/icons/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#1C7C54"
     },
@@ -24,7 +24,7 @@
       "googleServicesFile": "./google-services.json",
 
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icons/logo.jpg",
+        "foregroundImage": "./assets/icons/logo.png",
         "backgroundColor": "#1C7C54"
       },
 
@@ -35,7 +35,6 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.VIBRATE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.POST_NOTIFICATIONS"
       ],
 
@@ -43,31 +42,16 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [
-            {
-              "scheme": "nammavayal"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "data": [{ "scheme": "nammavayal" }],
+          "category": ["BROWSABLE", "DEFAULT"]
         },
         {
           "action": "SEND",
-          "category": [
-            "DEFAULT"
-          ],
+          "category": ["DEFAULT"],
           "data": [
-            {
-              "mimeType": "image/jpeg"
-            },
-            {
-              "mimeType": "image/png"
-            },
-            {
-              "mimeType": "image/*"
-            }
+            { "mimeType": "image/jpeg" },
+            { "mimeType": "image/png" },
+            { "mimeType": "image/*" }
           ]
         }
       ]
@@ -76,7 +60,7 @@
     "scheme": "nammavayal",
 
     "notification": {
-      "icon": "./assets/icons/logo.jpg",
+      "icon": "./assets/icons/logo.png",
       "color": "#1C7C54",
       "androidMode": "default",
       "androidCollapsedTitle": "Namma Vayal"
@@ -88,7 +72,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icons/logo.jpg",
+          "icon": "./assets/icons/logo.png",
           "color": "#1C7C54",
           "defaultChannel": "vayal-default",
           "sounds": []
@@ -101,7 +85,8 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
-            "minSdkVersion": 24
+            "minSdkVersion": 24,
+            "kotlinVersion": "1.9.25"
           }
         }
       ],

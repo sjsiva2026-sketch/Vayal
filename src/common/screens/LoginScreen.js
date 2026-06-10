@@ -1,16 +1,20 @@
 // src/common/screens/LoginScreen.js
-// Production: Real Firebase Phone Auth OTP via SMS
-// reCAPTCHA handled by FirebaseRecaptchaVerifierModal (expo-firebase-recaptcha)
+// Production: Firebase Phone Auth OTP via SMS
+//
+// NO expo-firebase-recaptcha — that package is DEPRECATED since Expo SDK 48.
+// Firebase Phone Auth in EAS production builds uses Google Play Integrity
+// automatically. No reCAPTCHA modal is shown to users.
+//
+// REQUIREMENT: Add your EAS build SHA-1 fingerprint to Firebase Console →
+//              Project Settings → Your Android App → Add fingerprint.
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   SafeAreaView, KeyboardAvoidingView, Platform,
   StatusBar, ActivityIndicator, ScrollView, Image, Dimensions,
 } from 'react-native';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import { sendOTP } from '../../../firebase/auth';
-import app         from '../../../firebase/config';
 import { FIcon }   from '../../../utils/icons';
 import { ICONS }   from '../../../assets/index';
 import { IMG }     from '../../../utils/imageSize';
@@ -28,9 +32,6 @@ export default function LoginScreen({ navigation, route }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
-  // reCAPTCHA verifier ref — required for Firebase Phone Auth
-  const recaptchaVerifier = useRef(null);
-
   const handleSendOTP = async () => {
     const cleaned = phone.trim();
     if (cleaned.length !== 10 || !/^\d{10}$/.test(cleaned)) {
@@ -40,8 +41,7 @@ export default function LoginScreen({ navigation, route }) {
     setLoading(true);
     setError('');
     try {
-      await sendOTP(`+91${cleaned}`, recaptchaVerifier.current);
-      // Navigate to OTP screen — no devOTP passed
+      await sendOTP(`+91${cleaned}`);
       navigation.navigate('OTP', { phone: cleaned, role });
     } catch (e) {
       const msg = (e?.message || '').toLowerCase();
@@ -53,8 +53,8 @@ export default function LoginScreen({ navigation, route }) {
         setError('Invalid phone number. Check and try again.');
       } else if (msg.includes('quota')) {
         setError('SMS quota exceeded. Please try again later.');
-      } else if (msg.includes('recaptcha') || msg.includes('captcha')) {
-        setError('Verification failed. Please try again.');
+      } else if (msg.includes('sha-1') || msg.includes('not authorized') || msg.includes('app-not-authorized')) {
+        setError('App not authorized. Contact support.');
       } else {
         setError(e.message || 'Could not send OTP. Check your connection.');
       }
@@ -69,14 +69,7 @@ export default function LoginScreen({ navigation, route }) {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      {/* Firebase reCAPTCHA — invisible, required for phone auth */}
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={app.options}
-        attemptInvisibleVerification={true}
-      />
-
-      <KeyboardAvoidingView style={s.kav} behavior="height">
+      <KeyboardAvoidingView style={s.kav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           contentContainerStyle={s.scroll}
           keyboardShouldPersistTaps="handled"
@@ -128,7 +121,7 @@ export default function LoginScreen({ navigation, route }) {
                 keyboardType="phone-pad"
                 maxLength={10}
                 value={phone}
-                onChangeText={v => { setPhone(v); setError(''); }}
+                onChangeText={v => { setPhone(v.replace(/\D/g, '')); setError(''); }}
                 autoFocus
               />
               {ready && <Text style={s.checkMark}>✓</Text>}
@@ -152,7 +145,7 @@ export default function LoginScreen({ navigation, route }) {
             </View>
 
             <TouchableOpacity
-              style={[s.btn, !ready && s.btnOff]}
+              style={[s.btn, (!ready || loading) && s.btnOff]}
               onPress={handleSendOTP}
               disabled={!ready || loading}
               activeOpacity={0.88}
@@ -162,6 +155,7 @@ export default function LoginScreen({ navigation, route }) {
                 : <Text style={s.btnTxt}>Get OTP →</Text>
               }
             </TouchableOpacity>
+
             <Text style={s.footer}>🔒 Your number is safe · No spam ever</Text>
           </View>
           <View style={{ height: 24 }} />

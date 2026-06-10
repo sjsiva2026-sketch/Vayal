@@ -4,20 +4,8 @@ service cloud.firestore {
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    // Real Firebase Phone Auth user (not anonymous)
+    // Any authenticated user (phone or email/password)
     function isSignedIn() {
-      return request.auth != null
-          && request.auth.token.firebase.sign_in_provider == 'phone';
-    }
-
-    // Email/password = admin path
-    function isEmailUser() {
-      return request.auth != null
-          && request.auth.token.firebase.sign_in_provider == 'password';
-    }
-
-    // Any authenticated user (phone or email)
-    function isAnyAuth() {
       return request.auth != null;
     }
 
@@ -25,15 +13,15 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // Admin = email/password user whose Firestore role == 'admin'
-    // NOTE: For Firestore security rules, we trust the email provider
-    // + a get() check on the users doc for the role field.
+    // Admin = email/password sign-in + role field is "admin" in their user doc
+    // No hardcoded UIDs — works for any admin account you create in Firebase Console
     function isAdmin() {
-      return isEmailUser()
+      return request.auth != null
+          && request.auth.token.firebase.sign_in_provider == 'password'
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Fields that only admin may set/change
+    // Fields only admin may write — prevent self-elevation
     function touchesAdminFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'paymentStatus', 'isLocked', 'kycStatus',
@@ -44,90 +32,74 @@ service cloud.firestore {
 
     // ── USERS ─────────────────────────────────────────────────────────────
     match /users/{uid} {
-      // Owner/farmer can read their own doc; admin can read any
       allow read:   if isSelf(uid) || isAdmin();
-
-      // New user registers right after OTP verify
-      allow create: if isSelf(uid) && isAnyAuth()
-                    && !('role' in request.resource.data
-                         ? request.resource.data.role == 'admin'
-                         : false);
-
-      // User can update their own non-admin fields; admin can update anything
+      allow create: if isSelf(uid) && isSignedIn()
+                    && request.resource.data.role != 'admin';
       allow update: if isAdmin()
                     || (isSelf(uid) && isSignedIn() && !touchesAdminFields());
-
       allow delete: if isAdmin();
-    }
-
-    // ── MACHINES ──────────────────────────────────────────────────────────
-    match /machines/{id} {
-      allow read:          if isAnyAuth();
-      allow create:        if isSignedIn()
-                           && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if isAdmin()
-                            || (isSignedIn()
-                                && resource.data.ownerId == request.auth.uid);
     }
 
     // ── BOOKINGS ──────────────────────────────────────────────────────────
     match /bookings/{id} {
-      allow read:   if isAnyAuth();
-
+      allow read:   if isSignedIn();
       allow create: if isSignedIn()
                     && request.resource.data.farmerId == request.auth.uid;
-
       allow update: if isAdmin()
                     || (isSignedIn()
                         && (resource.data.ownerId  == request.auth.uid
                          || resource.data.farmerId == request.auth.uid)
                         && !touchesAdminFields());
-
       allow delete: if isAdmin()
                     || (isSignedIn()
                         && (resource.data.ownerId  == request.auth.uid
                          || resource.data.farmerId == request.auth.uid)
-                        && resource.data.status != 'completed'
+                        && resource.data.status        != 'completed'
                         && resource.data.paymentStatus != 'paid');
+    }
+
+    // ── MACHINES ──────────────────────────────────────────────────────────
+    match /machines/{id} {
+      allow read:           if isSignedIn();
+      allow create:         if isSignedIn()
+                            && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isAdmin()
+                            || (isSignedIn() && resource.data.ownerId == request.auth.uid);
     }
 
     // ── COMMISSION PAYMENTS ───────────────────────────────────────────────
     match /commissionPayments/{id} {
       allow read: if isAdmin()
-                  || (isSignedIn()
-                      && resource.data.ownerId == request.auth.uid);
-
+                  || (isSignedIn() && resource.data.ownerId == request.auth.uid);
       allow create: if isSignedIn()
-                    && request.resource.data.ownerId == request.auth.uid
+                    && request.resource.data.ownerId       == request.auth.uid
                     && request.resource.data.paymentStatus == 'pending_verification'
                     && !('adminVerified' in request.resource.data);
-
       allow update: if isAdmin()
                     || (isSignedIn()
                         && resource.data.ownerId == request.auth.uid
                         && !touchesAdminFields());
-
       allow delete: if isAdmin();
     }
 
     // ── RATINGS ───────────────────────────────────────────────────────────
     match /ratings/{id} {
-      allow read:          if isAnyAuth();
-      allow create:        if isSignedIn()
-                           && request.resource.data.farmerId == request.auth.uid;
+      allow read:           if isSignedIn();
+      allow create:         if isSignedIn()
+                            && request.resource.data.farmerId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
-    // ── APP CONFIG (maintenance, app settings) ────────────────────────────
+    // ── APP CONFIG (maintenance flag, app settings) ───────────────────────
     match /appConfig/{id} {
-      allow read:  if isAnyAuth();
+      allow read:  if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // ── APP ACCOUNT (commission ledger) ───────────────────────────────────
+    // ── APP ACCOUNT ───────────────────────────────────────────────────────
     match /appAccount/{id} {
-      allow read:          if isAdmin();
-      allow create:        if isSignedIn();
+      allow read:           if isAdmin();
+      allow create:         if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
@@ -143,18 +115,14 @@ service cloud.firestore {
 
     // ── PENDING VERIFICATIONS ─────────────────────────────────────────────
     match /pendingVerifications/{id} {
-      allow read:  if isAdmin();
+      allow read:           if isAdmin();
       allow create, update: if isSignedIn();
-      allow delete: if isAdmin();
-    }
-
-    // ── UPI TRANSACTIONS ──────────────────────────────────────────────────
-    match /upiTransactions/{id} {
-      allow read:  if isSignedIn();
-      allow write: if isAdmin();
+      allow delete:         if isAdmin();
     }
 
     // ── DENY EVERYTHING ELSE ──────────────────────────────────────────────
+    // This replaces the insecure catch-all that allowed any auth user
+    // to read/write ANY document not covered above.
     match /{document=**} {
       allow read, write: if false;
     }
