@@ -1,12 +1,13 @@
 // src/common/screens/LoginScreen.js
-// Production: Firebase Phone Auth OTP via SMS
+// Production: Firebase Phone Auth — Real SMS OTP
 //
-// NO expo-firebase-recaptcha — that package is DEPRECATED since Expo SDK 48.
-// Firebase Phone Auth in EAS production builds uses Google Play Integrity
-// automatically. No reCAPTCHA modal is shown to users.
+// NO expo-firebase-recaptcha import — package is deprecated, broken, removed.
+// Firebase Phone Auth uses Google Play Integrity silently on Android EAS builds.
 //
-// REQUIREMENT: Add your EAS build SHA-1 fingerprint to Firebase Console →
-//              Project Settings → Your Android App → Add fingerprint.
+// Pre-requisite (one-time Firebase Console setup):
+//   1. Authentication → Sign-in method → Phone → Enable
+//   2. Project Settings → Your Android app → Add SHA-1 fingerprint
+//      Get SHA-1: run  eas credentials  in terminal
 
 import React, { useState } from 'react';
 import {
@@ -41,6 +42,7 @@ export default function LoginScreen({ navigation, route }) {
     setLoading(true);
     setError('');
     try {
+      // sendOTP handles E.164 formatting internally
       await sendOTP(`+91${cleaned}`);
       navigation.navigate('OTP', { phone: cleaned, role });
     } catch (e) {
@@ -53,8 +55,8 @@ export default function LoginScreen({ navigation, route }) {
         setError('Invalid phone number. Check and try again.');
       } else if (msg.includes('quota')) {
         setError('SMS quota exceeded. Please try again later.');
-      } else if (msg.includes('sha-1') || msg.includes('not authorized') || msg.includes('app-not-authorized')) {
-        setError('App not authorized. Contact support.');
+      } else if (msg.includes('sha-1') || msg.includes('not authorized') || msg.includes('app-not-authorized') || msg.includes('internal-error') || msg.includes('internal error')) {
+        setError('App not authorized for OTP. Contact support.');
       } else {
         setError(e.message || 'Could not send OTP. Check your connection.');
       }
@@ -69,7 +71,10 @@ export default function LoginScreen({ navigation, route }) {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      <KeyboardAvoidingView style={s.kav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView
+        style={s.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <ScrollView
           contentContainerStyle={s.scroll}
           keyboardShouldPersistTaps="handled"
@@ -121,7 +126,10 @@ export default function LoginScreen({ navigation, route }) {
                 keyboardType="phone-pad"
                 maxLength={10}
                 value={phone}
-                onChangeText={v => { setPhone(v.replace(/\D/g, '')); setError(''); }}
+                onChangeText={v => {
+                  setPhone(v.replace(/\D/g, ''));
+                  setError('');
+                }}
                 autoFocus
               />
               {ready && <Text style={s.checkMark}>✓</Text>}

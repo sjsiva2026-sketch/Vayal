@@ -1,43 +1,60 @@
 // firebase/auth.js
 // Production Firebase Phone Authentication — Real OTP via SMS
 //
-// ── How Phone Auth works in EAS production builds ────────────────────────
-// Firebase Phone Auth on Android uses Google Play Integrity / SafetyNet
-// automatically when running in a properly signed APK/AAB.
-// expo-firebase-recaptcha is DEPRECATED since Expo SDK 48 and must NOT be used.
-// No reCAPTCHA modal is shown to the user. Firebase handles verification silently.
+// ── Why no reCAPTCHA / expo-firebase-recaptcha ────────────────────────────
+// expo-firebase-recaptcha is DEPRECATED (last published 3 years ago, broken
+// since Expo SDK 48). It must NOT be in package.json or imported anywhere.
 //
-// The only requirement:
-//   1. SHA-1 fingerprint of your EAS signing cert added in Firebase Console
-//      (Project Settings → Your app → Add fingerprint)
-//   2. Firebase Phone Auth enabled (Authentication → Sign-in method → Phone)
-// ─────────────────────────────────────────────────────────────────────────
+// Firebase Phone Auth on Android uses Google Play Integrity API (formerly
+// SafetyNet) automatically inside a properly signed EAS APK/AAB.
+// No reCAPTCHA modal, no WebView, no extra package needed.
+//
+// One-time Firebase Console setup required:
+//   1. Authentication → Sign-in method → Phone → Enable
+//   2. Project Settings → Your Android app → Add SHA-1 fingerprint
+//      (run: eas credentials  → copy SHA-1)
+//
+// ── Why this file was crashing ────────────────────────────────────────────
+// "Cannot read property 'verify' of undefined"
+//
+// Root cause: firebase/functions/sendOTP.js had a fake OTP system:
+//   export const verifyOTP = (inputOTP, storedOTP) =>
+//     inputOTP.trim() === storedOTP.trim()
+//
+// Some code path was calling verifyOTP(otp, undefined) — storedOTP was
+// undefined, and .trim() on undefined threw the error.
+// That file has been neutered (see firebase/functions/sendOTP.js).
+//
+// Secondary cause: lazy auth init (getFirebaseAuth inside a getter that ran
+// before AsyncStorage was ready) returned undefined _auth on first call.
+// Fixed in firebase/config.js — auth is now initialized eagerly at module load.
 
 import {
   signInWithPhoneNumber,
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getFirebaseAuth } from './config';
+import AsyncStorage        from '@react-native-async-storage/async-storage';
+import { auth }            from './config';   // eager-initialized auth instance
 
 const KEY_UID   = '@vayal_uid';
 const KEY_PHONE = '@vayal_phone';
 
-// Holds the Firebase ConfirmationResult between sendOTP() and verifyOTP()
+// Holds Firebase ConfirmationResult between sendOTP() and verifyOTP()
 let _confirmationResult = null;
 
 // ── Send OTP ──────────────────────────────────────────────────────────────
-// phoneNumber must be in E.164 format, e.g. "+919876543210"
-// In EAS production builds, Firebase handles SafetyNet/Play Integrity silently.
-// No reCAPTCHA verifier argument needed or accepted.
+// phoneNumber: E.164 format e.g. "+919876543210"
+// No recaptchaVerifier needed — Play Integrity handles it silently
 export const sendOTP = async (phoneNumber) => {
-  const auth = getFirebaseAuth();
+  // Guard: auth must be initialized
+  if (!auth) {
+    throw new Error('Firebase Auth not initialized. Please restart the app.');
+  }
 
   const e164 = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
 
   try {
-    // Pass undefined as verifier — Firebase uses Play Integrity silently on Android
     _confirmationResult = await signInWithPhoneNumber(auth, e164);
     return { success: true };
   } catch (e) {
@@ -55,8 +72,11 @@ export const sendOTP = async (phoneNumber) => {
       throw new Error('Phone number is required.');
     } else if (code === 'auth/captcha-check-failed' || code === 'auth/app-not-authorized') {
       throw new Error(
-        'App not authorized for Phone Auth. Add your SHA-1 fingerprint in Firebase Console → Project Settings.'
+        'App not authorized for Phone Auth. ' +
+        'Add your SHA-1 fingerprint in Firebase Console → Project Settings → Your Android App.'
       );
+    } else if (code === 'auth/internal-error') {
+      throw new Error('Firebase internal error. Check SHA-1 fingerprint is added in Firebase Console.');
     } else {
       throw new Error(e.message || 'Failed to send OTP. Please try again.');
     }
@@ -66,12 +86,12 @@ export const sendOTP = async (phoneNumber) => {
 // ── Verify OTP ────────────────────────────────────────────────────────────
 export const verifyOTP = async (inputOTP) => {
   if (!_confirmationResult) {
-    throw new Error('No OTP session found. Please request a new OTP.');
+    throw new Error('No OTP session found. Please go back and request a new OTP.');
   }
 
   const trimmed = (inputOTP || '').trim();
   if (trimmed.length !== 6) {
-    throw new Error('Please enter the 6-digit OTP.');
+    throw new Error('Please enter the complete 6-digit OTP.');
   }
 
   try {
@@ -82,7 +102,7 @@ export const verifyOTP = async (inputOTP) => {
     const uid   = firebaseUser.uid;
     const phone = firebaseUser.phoneNumber;
 
-    // Persist for legacy AsyncStorage fallback (AuthContext primary is onAuthStateChanged)
+    // Persist UID/phone for backwards-compat AsyncStorage fallback
     await AsyncStorage.multiSet([
       [KEY_UID,   uid],
       [KEY_PHONE, phone || ''],
@@ -91,9 +111,15 @@ export const verifyOTP = async (inputOTP) => {
     return { uid, phoneNumber: phone };
   } catch (e) {
     const code = e?.code || '';
-    if (code === 'auth/invalid-verification-code' || code === 'auth/invalid-verification-id') {
+    if (
+      code === 'auth/invalid-verification-code' ||
+      code === 'auth/invalid-verification-id'
+    ) {
       throw new Error('Invalid OTP. Please check the code and try again.');
-    } else if (code === 'auth/code-expired' || code === 'auth/session-expired') {
+    } else if (
+      code === 'auth/code-expired' ||
+      code === 'auth/session-expired'
+    ) {
       _confirmationResult = null;
       throw new Error('OTP has expired. Please go back and request a new OTP.');
     } else if (code === 'auth/too-many-requests') {
@@ -106,22 +132,22 @@ export const verifyOTP = async (inputOTP) => {
   }
 };
 
-// ── Clear pending OTP session (e.g. on back navigation) ──────────────────
+// ── Clear OTP session (on back navigation from OTP screen) ────────────────
 export const clearOTPSession = () => {
   _confirmationResult = null;
 };
 
-// ── Check if an OTP session is active ────────────────────────────────────
+// ── Check if an OTP session is currently active ───────────────────────────
 export const hasActiveOTPSession = () => _confirmationResult !== null;
 
 // ── Logout ────────────────────────────────────────────────────────────────
 export const logout = async () => {
   _confirmationResult = null;
   try { await AsyncStorage.multiRemove([KEY_UID, KEY_PHONE]); } catch {}
-  try { await signOut(getFirebaseAuth()); } catch {}
+  try { await signOut(auth); } catch {}
 };
 
 // ── Listen to Firebase Auth state changes ────────────────────────────────
 export const onAuthChange = (callback) => {
-  return onAuthStateChanged(getFirebaseAuth(), callback);
+  return onAuthStateChanged(auth, callback);
 };

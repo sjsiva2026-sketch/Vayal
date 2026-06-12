@@ -2,127 +2,195 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helpers ──────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  HELPER FUNCTIONS
+    // ════════════════════════════════════════════════════════════════
 
-    // Any authenticated user (phone or email/password)
-    function isSignedIn() {
+    // எந்த Firebase authenticated user-உம்
+    function isAuth() {
       return request.auth != null;
     }
 
+    // Phone OTP login — farmers & owners
+    function isPhoneUser() {
+      return request.auth != null
+          && request.auth.token.firebase.sign_in_provider == 'phone';
+    }
+
+    // Email/password login
+    function isEmailUser() {
+      return request.auth != null
+          && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    // Document UID == caller UID
     function isSelf(uid) {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // Admin = email/password sign-in + role field is "admin" in their user doc
-    // No hardcoded UIDs — works for any admin account you create in Firebase Console
+    // ── ADMIN CHECK ──────────────────────────────────────────────────
+    // 3 conditions எல்லாம் true ஆகணும்:
+    //   1. email/password login
+    //   2. token-ல email == ADMIN_EMAIL (exact match)
+    //   3. Firestore users doc-ல role == 'admin'
+    //
+    // இந்த 3 checks-ல ஒண்ணு fail ஆனாலும் → admin இல்லை.
+    // வேற எந்த email-உம் admin access கிடைக்காது.
+    //
+    // உங்க admin email கீழ மாத்துங்க:
     function isAdmin() {
-      return request.auth != null
-          && request.auth.token.firebase.sign_in_provider == 'password'
+      return isEmailUser()
+          && request.auth.token.email == 'sjsiva2026@gmail.com'
+          && request.auth.token.email_verified == true
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Fields only admin may write — prevent self-elevation
-    function touchesAdminFields() {
+    // Admin மட்டும் write பண்ணக்கூடிய fields
+    function isAdminOnlyField() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'paymentStatus', 'isLocked', 'kycStatus',
-        'isVerified', 'accessGranted', 'adminVerified',
-        'isBlocked', 'role'
+        'paymentStatus',
+        'isLocked',
+        'kycStatus',
+        'isVerified',
+        'accessGranted',
+        'adminVerified',
+        'isBlocked',
+        'role'
       ]);
     }
 
-    // ── USERS ─────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  USERS  /users/{uid}
+    // ════════════════════════════════════════════════════════════════
     match /users/{uid} {
-      allow read:   if isSelf(uid) || isAdmin();
-      allow create: if isSelf(uid) && isSignedIn()
-                    && request.resource.data.role != 'admin';
+
+      allow read: if isSelf(uid) || isAdmin();
+
+      // Farmer/Owner — OTP verify பண்ணிட்டு register
+      // Admin — first login setDoc (role: 'admin')
+      allow create: if (isSelf(uid) && isPhoneUser()
+                        && request.resource.data.role != 'admin')
+                    || (isSelf(uid) && isEmailUser()
+                        && request.auth.token.email == 'sjsiva2026@gmail.com');
+
+      // User — தன் non-admin fields update
+      // Admin — எல்லா fields update (KYC approve, lock, payment verify)
       allow update: if isAdmin()
-                    || (isSelf(uid) && isSignedIn() && !touchesAdminFields());
+                    || (isSelf(uid) && isAuth() && !isAdminOnlyField());
+
       allow delete: if isAdmin();
     }
 
-    // ── BOOKINGS ──────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  MACHINES  /machines/{id}
+    // ════════════════════════════════════════════════════════════════
+    match /machines/{id} {
+      allow read:           if isAuth();
+      allow create:         if isPhoneUser()
+                            && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isAdmin()
+                            || (isPhoneUser()
+                                && resource.data.ownerId == request.auth.uid);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  BOOKINGS  /bookings/{id}
+    // ════════════════════════════════════════════════════════════════
     match /bookings/{id} {
-      allow read:   if isSignedIn();
-      allow create: if isSignedIn()
+      allow read:   if isAuth();
+      allow create: if isPhoneUser()
                     && request.resource.data.farmerId == request.auth.uid;
       allow update: if isAdmin()
-                    || (isSignedIn()
+                    || (isPhoneUser()
                         && (resource.data.ownerId  == request.auth.uid
                          || resource.data.farmerId == request.auth.uid)
-                        && !touchesAdminFields());
+                        && !isAdminOnlyField());
       allow delete: if isAdmin()
-                    || (isSignedIn()
+                    || (isPhoneUser()
                         && (resource.data.ownerId  == request.auth.uid
                          || resource.data.farmerId == request.auth.uid)
                         && resource.data.status        != 'completed'
                         && resource.data.paymentStatus != 'paid');
     }
 
-    // ── MACHINES ──────────────────────────────────────────────────────────
-    match /machines/{id} {
-      allow read:           if isSignedIn();
-      allow create:         if isSignedIn()
-                            && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if isAdmin()
-                            || (isSignedIn() && resource.data.ownerId == request.auth.uid);
-    }
-
-    // ── COMMISSION PAYMENTS ───────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  COMMISSION PAYMENTS  /commissionPayments/{ownerId_date}
+    // ════════════════════════════════════════════════════════════════
     match /commissionPayments/{id} {
       allow read: if isAdmin()
-                  || (isSignedIn() && resource.data.ownerId == request.auth.uid);
-      allow create: if isSignedIn()
+                  || (isPhoneUser() && resource.data.ownerId == request.auth.uid);
+      allow create: if isPhoneUser()
                     && request.resource.data.ownerId       == request.auth.uid
                     && request.resource.data.paymentStatus == 'pending_verification'
                     && !('adminVerified' in request.resource.data);
       allow update: if isAdmin()
-                    || (isSignedIn()
+                    || (isPhoneUser()
                         && resource.data.ownerId == request.auth.uid
-                        && !touchesAdminFields());
+                        && !isAdminOnlyField());
       allow delete: if isAdmin();
     }
 
-    // ── RATINGS ───────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  RATINGS  /ratings/{bookingId}
+    // ════════════════════════════════════════════════════════════════
     match /ratings/{id} {
-      allow read:           if isSignedIn();
-      allow create:         if isSignedIn()
+      allow read:           if isAuth();
+      allow create:         if isPhoneUser()
                             && request.resource.data.farmerId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
-    // ── APP CONFIG (maintenance flag, app settings) ───────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  APP CONFIG  /appConfig/{id}
+    //  allow read: if true — login-க்கு முன்னாடியே maintenance check நடக்கும்
+    // ════════════════════════════════════════════════════════════════
     match /appConfig/{id} {
-      allow read:  if isSignedIn();
+      allow read:  if true;
       allow write: if isAdmin();
     }
 
-    // ── APP ACCOUNT ───────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  APP ACCOUNT  /appAccount/{id}
+    // ════════════════════════════════════════════════════════════════
     match /appAccount/{id} {
       allow read:           if isAdmin();
-      allow create:         if isSignedIn();
+      allow create:         if isAuth();
       allow update, delete: if isAdmin();
     }
 
     match /appAccountSummary/{id} {
       allow read:  if isAdmin();
-      allow write: if isSignedIn();
+      allow write: if isAuth();
     }
 
-    // ── DAILY PAYMENTS ────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  DAILY PAYMENTS  /dailyPayments/{ownerId_date}
+    // ════════════════════════════════════════════════════════════════
     match /dailyPayments/{id} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isAuth();
     }
 
-    // ── PENDING VERIFICATIONS ─────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  PENDING VERIFICATIONS  /pendingVerifications/{txnId}
+    // ════════════════════════════════════════════════════════════════
     match /pendingVerifications/{id} {
       allow read:           if isAdmin();
-      allow create, update: if isSignedIn();
+      allow create, update: if isAuth();
       allow delete:         if isAdmin();
     }
 
-    // ── DENY EVERYTHING ELSE ──────────────────────────────────────────────
-    // This replaces the insecure catch-all that allowed any auth user
-    // to read/write ANY document not covered above.
+    // ════════════════════════════════════════════════════════════════
+    //  UPI TRANSACTIONS  /upiTransactions/{id}
+    // ════════════════════════════════════════════════════════════════
+    match /upiTransactions/{id} {
+      allow read:           if isAuth();
+      allow update:         if isAuth();
+      allow create, delete: if isAdmin();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  DENY EVERYTHING ELSE
+    // ════════════════════════════════════════════════════════════════
     match /{document=**} {
       allow read, write: if false;
     }

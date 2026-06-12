@@ -1,48 +1,46 @@
 // firebase/adminAuth.js
-// ─────────────────────────────────────────────────────────────────────────────
-// Admin Email + Password authentication
-// Separate from the phone OTP used by farmers/owners
-//
-// SETUP (one-time in Firebase Console):
-//   Authentication → Sign-in method → Email/Password → Enable
-//   Authentication → Users → Add User → admin@nammaVayal.com + password
-// ─────────────────────────────────────────────────────────────────────────────
+// Only ONE specific email can login as admin.
+// வேற எந்த email-உம் login ஆகவே முடியாது — code + rules இரண்டிலயும் block.
 
 import {
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirebaseAuth, db } from './config';
 
+// ── உங்க admin email இங்க மாத்துங்க ─────────────────────────────────────
+const ADMIN_EMAIL = 'sjsiva2026@gmail.com';
+// ─────────────────────────────────────────────────────────────────────────
+
 const KEY_ADMIN_UID   = '@vayal_admin_uid';
 const KEY_ADMIN_EMAIL = '@vayal_admin_email';
 
-// ── Admin Login with Email + Password ─────────────────────────────────────
 export const adminLogin = async (email, password) => {
-  const auth = getFirebaseAuth();
+  const auth         = getFirebaseAuth();
   const trimmedEmail = email.trim().toLowerCase();
 
   if (!trimmedEmail) throw new Error('Email is required');
   if (!password)     throw new Error('Password is required');
 
-  // Firebase email/password sign in
-  const userCredential = await signInWithEmailAndPassword(
-    auth, trimmedEmail, password
-  );
-  const firebaseUser = userCredential.user;
+  // ── Specific email check — வேற எந்த email-உம் block ──────────────────
+  if (trimmedEmail !== ADMIN_EMAIL.toLowerCase()) {
+    throw new Error('Access denied. You are not authorized to login as admin.');
+  }
 
-  // Verify this UID has admin role in Firestore
+  // Firebase sign in
+  const cred         = await signInWithEmailAndPassword(auth, trimmedEmail, password);
+  const firebaseUser = cred.user;
+
+  // Double-check: Firestore-லயும் role == 'admin' confirm
   const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
 
   let profile;
   if (snap.exists() && snap.data().role === 'admin') {
-    // Existing admin profile
     profile = { id: firebaseUser.uid, ...snap.data() };
   } else {
-    // First login — auto-create admin profile in Firestore
+    // First login — admin doc create
     profile = {
       role:      'admin',
       email:     trimmedEmail,
@@ -55,7 +53,6 @@ export const adminLogin = async (email, password) => {
     profile = { id: firebaseUser.uid, ...profile };
   }
 
-  // Persist admin session
   await AsyncStorage.multiSet([
     [KEY_ADMIN_UID,   firebaseUser.uid],
     [KEY_ADMIN_EMAIL, trimmedEmail],
@@ -64,14 +61,12 @@ export const adminLogin = async (email, password) => {
   return { uid: firebaseUser.uid, email: trimmedEmail, profile };
 };
 
-// ── Admin Logout ───────────────────────────────────────────────────────────
 export const adminLogout = async () => {
   const auth = getFirebaseAuth();
   await AsyncStorage.multiRemove([KEY_ADMIN_UID, KEY_ADMIN_EMAIL]);
-  try { await signOut(auth); } catch { /* ignore */ }
+  try { await signOut(auth); } catch {}
 };
 
-// ── Get stored admin session ───────────────────────────────────────────────
 export const getStoredAdmin = async () => {
   try {
     const [[, uid], [, email]] = await AsyncStorage.multiGet([
@@ -81,7 +76,6 @@ export const getStoredAdmin = async () => {
   } catch { return null; }
 };
 
-// ── Check if current Firebase user is admin ────────────────────────────────
 export const isAdminUser = async (uid) => {
   if (!uid) return false;
   try {

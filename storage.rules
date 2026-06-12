@@ -2,9 +2,11 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  HELPER FUNCTIONS
+    // ════════════════════════════════════════════════════════════════
 
-    function isSignedIn() {
+    function isAuth() {
       return request.auth != null;
     }
 
@@ -12,47 +14,65 @@ service firebase.storage {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // Admin = email/password sign-in (no hardcoded UIDs)
+    // ── ADMIN CHECK ──────────────────────────────────────────────────
+    // Storage rules-ல Firestore get() call முடியாது.
+    // எனவே sign_in_provider + exact email address check.
+    //
+    // உங்க admin email கீழ மாத்துங்க:
     function isAdmin() {
       return request.auth != null
-          && request.auth.token.firebase.sign_in_provider == 'password';
+          && request.auth.token.firebase.sign_in_provider == 'password'
+          && request.auth.token.email == 'sjsiva2026@gmail.com';
     }
 
-    // Max 5 MB, image MIME type only
+    // Max 5 MB, image MIME type மட்டும்
     function isValidImage() {
       return request.resource.size < 5 * 1024 * 1024
           && request.resource.contentType.matches('image/.*');
     }
 
-    // ── Profile photos ────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  KYC DOCUMENTS  kyc/{ownerId}/{filename}
+    //  Owner upload, Owner + Admin read, Admin delete
+    // ════════════════════════════════════════════════════════════════
+    match /kyc/{ownerId}/{filename} {
+      allow write:  if isSelf(ownerId) && isValidImage();
+      allow read:   if isSelf(ownerId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  PAYMENT SCREENSHOTS  payments/{ownerId}/{filename}
+    //  Owner upload, Owner + Admin read, Admin delete
+    // ════════════════════════════════════════════════════════════════
+    match /payments/{ownerId}/{filename} {
+      allow write:  if isSelf(ownerId) && isValidImage();
+      allow read:   if isSelf(ownerId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  PROFILE PHOTOS  profiles/{userId}/{filename}
+    //  Self upload, All logged-in users read, Self + Admin delete
+    // ════════════════════════════════════════════════════════════════
     match /profiles/{userId}/{filename} {
-      allow read:   if isSignedIn();
       allow write:  if isSelf(userId) && isValidImage();
+      allow read:   if isAuth();
       allow delete: if isSelf(userId) || isAdmin();
     }
 
-    // Legacy flat profile photos
+    // ════════════════════════════════════════════════════════════════
+    //  LEGACY PROFILE PHOTOS  profilePhotos/{filename}
+    //  Backwards compatibility
+    // ════════════════════════════════════════════════════════════════
     match /profilePhotos/{filename} {
-      allow read:  if isSignedIn();
-      allow write: if isSignedIn() && isValidImage();
+      allow read:  if isAuth();
+      allow write: if isAuth() && isValidImage();
     }
 
-    // ── KYC documents ─────────────────────────────────────────────────────
-    match /kyc/{ownerId}/{filename} {
-      allow read:   if isSelf(ownerId) || isAdmin();
-      allow write:  if isSelf(ownerId) && isValidImage();
-      allow delete: if isAdmin();
-    }
-
-    // ── Commission payment screenshots ────────────────────────────────────
-    match /payments/{ownerId}/{filename} {
-      allow read:   if isSelf(ownerId) || isAdmin();
-      allow write:  if isSelf(ownerId) && isValidImage();
-      allow delete: if isAdmin();
-    }
-
-    // ── Deny everything else ──────────────────────────────────────────────
-    // Removes the insecure catch-all that let any auth user access anything
+    // ════════════════════════════════════════════════════════════════
+    //  DENY EVERYTHING ELSE
+    // ════════════════════════════════════════════════════════════════
     match /{allPaths=**} {
       allow read, write: if false;
     }
